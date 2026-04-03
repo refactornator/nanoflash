@@ -64,24 +64,14 @@ Messages and task operations are verified against group identity:
 | View all tasks | ✓ | Own only |
 | Manage other groups | ✓ | ✗ |
 
-### 5. Credential Isolation (OneCLI Agent Vault)
+### 5. Credential Handling
 
-Real API credentials **never enter containers**. NanoFlash uses [OneCLI's Agent Vault](https://github.com/onecli/onecli) to proxy outbound requests and inject credentials at the gateway level.
-
-**How it works:**
-1. Credentials are registered once with `onecli secrets create`, stored and managed by OneCLI
-2. When NanoFlash spawns a container, it calls `applyContainerConfig()` to route outbound HTTPS through the OneCLI gateway
-3. The gateway matches requests by host and path, injects the real credential, and forwards
-4. Agents cannot discover real credentials — not in environment, stdin, files, or `/proc`
-
-**Per-agent policies:**
-Each NanoFlash group gets its own OneCLI agent identity. This allows different credential policies per group (e.g. your sales agent vs. support agent). OneCLI supports rate limits, and time-bound access and approval flows are on the roadmap.
+The `GEMINI_API_KEY` is read from `.env` on the host and passed directly to containers as an environment variable. The `.env` file itself is visible in the read-only project mount but the agent-runner reads env vars, not `.env`.
 
 **NOT Mounted:**
 - Channel auth sessions (`store/auth/`) — host only
 - Mount allowlist — external, never mounted
 - Any credentials matching blocked patterns
-- `.env` is shadowed with `/dev/null` in the project root mount
 
 ## Privilege Comparison
 
@@ -110,7 +100,7 @@ Each NanoFlash group gets its own OneCLI agent identity. This allows different c
 │  • IPC authorization                                              │
 │  • Mount validation (external allowlist)                          │
 │  • Container lifecycle                                            │
-│  • OneCLI Agent Vault (injects credentials, enforces policies)   │
+│  • Credential injection (GEMINI_API_KEY as env var)              │
 └────────────────────────────────┬─────────────────────────────────┘
                                  │
                                  ▼ Explicit mounts only, no secrets
@@ -119,7 +109,7 @@ Each NanoFlash group gets its own OneCLI agent identity. This allows different c
 │  • Agent execution                                                │
 │  • Bash commands (sandboxed)                                      │
 │  • File operations (limited to mounts)                            │
-│  • API calls routed through OneCLI Agent Vault                   │
+│  • API calls use injected GEMINI_API_KEY env var                 │
 │  • No real credentials in environment or filesystem              │
 └──────────────────────────────────────────────────────────────────┘
 ```
