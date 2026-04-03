@@ -55,19 +55,19 @@ cd nanoflash
 
 ## Usage
 
-Talk to your assistant with the trigger word (default: `@Andy`):
+Talk to your assistant with the trigger word (default: `@Sergey`):
 
 ```
-@Andy send an overview of the sales pipeline every weekday morning at 9am
-@Andy review the git history for the past week each Friday and update the README if there's drift
-@Andy every Monday at 8am, compile news on AI developments from Hacker News and message me a briefing
+@Sergey send an overview of the sales pipeline every weekday morning at 9am
+@Sergey review the git history for the past week each Friday and update the README if there's drift
+@Sergey every Monday at 8am, compile news on AI developments from Hacker News and message me a briefing
 ```
 
 From the main channel (your self-chat), you can manage groups and tasks:
 ```
-@Andy list all scheduled tasks across groups
-@Andy pause the Monday briefing task
-@Andy join the Family Chat group
+@Sergey list all scheduled tasks across groups
+@Sergey pause the Monday briefing task
+@Sergey join the Family Chat group
 ```
 
 ## Requirements
@@ -106,7 +106,7 @@ Key files:
 GEMINI_API_KEY=your-key-here
 GEMINI_PRIMARY_MODEL=gemini-2.5-pro-latest   # optional, this is the default
 GEMINI_FAST_MODEL=gemini-2.0-flash           # optional, used for media analysis
-ASSISTANT_NAME=Andy                           # trigger word / agent name
+ASSISTANT_NAME=Sergey                           # trigger word / agent name
 TZ=America/New_York                           # your timezone
 ```
 

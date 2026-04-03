@@ -3,21 +3,21 @@ import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
 
 // Sentinel markers must match container-runner.ts
-const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
-const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
+const OUTPUT_START_MARKER = '---NANOFLASH_OUTPUT_START---';
+const OUTPUT_END_MARKER = '---NANOFLASH_OUTPUT_END---';
 
 // Mock config
 vi.mock('./config.js', () => ({
   CONTAINER_IMAGE: 'nanoflash-agent:latest',
   CONTAINER_MAX_OUTPUT_SIZE: 10485760,
   CONTAINER_TIMEOUT: 1800000, // 30min
-  DATA_DIR: '/tmp/nanoclaw-test-data',
-  GROUPS_DIR: '/tmp/nanoclaw-test-groups',
+  DATA_DIR: '/tmp/nanoflash-test-data',
+  GROUPS_DIR: '/tmp/nanoflash-test-groups',
   IDLE_TIMEOUT: 1800000, // 30min
   TIMEZONE: 'America/Los_Angeles',
   GEMINI_API_KEY: 'test-gemini-key',
-  GEMINI_PRIMARY_MODEL: 'gemini-2.5-pro-latest',
-  GEMINI_FAST_MODEL: 'gemini-2.0-flash',
+  GEMINI_PRIMARY_MODEL: 'gemini-3.1-pro-preview-customtools',
+  GEMINI_FAST_MODEL: 'gemini-3.1-flash-lite-preview',
   MAX_TOOL_ROUNDS: 25,
 }));
 
@@ -114,7 +114,7 @@ import type { RegisteredGroup } from './types.js';
 const testGroup: RegisteredGroup = {
   name: 'Test Group',
   folder: 'test-group',
-  trigger: '@Andy',
+  trigger: '@Sergey',
   added_at: new Date().toISOString(),
 };
 

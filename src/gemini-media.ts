@@ -6,7 +6,11 @@
  * process which already reads .env. No container or subprocess is involved.
  */
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { GEMINI_API_KEY, GEMINI_FAST_MODEL, GEMINI_MAX_VIDEO_MB } from './config.js';
+import {
+  GEMINI_API_KEY,
+  GEMINI_FAST_MODEL,
+  GEMINI_MAX_VIDEO_MB,
+} from './config.js';
 import { logger } from './logger.js';
 
 const WEB_FETCH_MAX_BYTES = 50 * 1024; // 50 KB
@@ -38,7 +42,12 @@ export async function analyzeImage(
       : 'Describe this image in detail.';
 
     const result = await model.generateContent([
-      { inlineData: { mimeType: mimeType || 'image/jpeg', data: buffer.toString('base64') } },
+      {
+        inlineData: {
+          mimeType: mimeType || 'image/jpeg',
+          data: buffer.toString('base64'),
+        },
+      },
       prompt,
     ]);
 

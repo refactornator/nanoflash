@@ -75,12 +75,16 @@ describe('ensureContainerRuntimeRunning', () => {
       `${CONTAINER_RUNTIME_BIN} system status`,
       { stdio: 'pipe', timeout: 10000 },
     );
-    expect(logger.debug).toHaveBeenCalledWith('Container runtime already running');
+    expect(logger.debug).toHaveBeenCalledWith(
+      'Container runtime already running',
+    );
   });
 
   it('auto-starts runtime when system status fails, then succeeds', () => {
     // status fails → start succeeds
-    mockExecSync.mockImplementationOnce(() => { throw new Error('not running'); });
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error('not running');
+    });
     mockExecSync.mockReturnValueOnce('');
 
     ensureContainerRuntimeRunning();
@@ -91,13 +95,19 @@ describe('ensureContainerRuntimeRunning', () => {
       `${CONTAINER_RUNTIME_BIN} system start`,
       { stdio: 'pipe', timeout: 30000 },
     );
-    expect(logger.info).toHaveBeenCalledWith('Apple Container started successfully');
+    expect(logger.info).toHaveBeenCalledWith(
+      'Apple Container started successfully',
+    );
   });
 
   it('throws when docker info fails', () => {
     // status fails, start also fails
-    mockExecSync.mockImplementationOnce(() => { throw new Error('not running'); });
-    mockExecSync.mockImplementationOnce(() => { throw new Error('Cannot start'); });
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error('not running');
+    });
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error('Cannot start');
+    });
 
     expect(() => ensureContainerRuntimeRunning()).toThrow(
       'Container runtime is required but failed to start',
@@ -184,7 +194,9 @@ describe('cleanupOrphans', () => {
   });
 
   it('continues stopping remaining containers when one stop fails', () => {
-    mockExecSync.mockReturnValueOnce(mockContainerLs(['nanoflash-a-1', 'nanoflash-b-2']));
+    mockExecSync.mockReturnValueOnce(
+      mockContainerLs(['nanoflash-a-1', 'nanoflash-b-2']),
+    );
     // First stop fails
     mockExecSync.mockImplementationOnce(() => {
       throw new Error('already stopped');

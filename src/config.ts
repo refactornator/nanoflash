@@ -17,7 +17,7 @@ const envConfig = readEnvFile([
 ]);
 
 export const ASSISTANT_NAME =
-  process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';
+  process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Sergey';
 export const ASSISTANT_HAS_OWN_NUMBER =
   (process.env.ASSISTANT_HAS_OWN_NUMBER ||
     envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
@@ -51,9 +51,11 @@ export const GEMINI_API_KEY =
 export const GEMINI_PRIMARY_MODEL =
   process.env.GEMINI_PRIMARY_MODEL ||
   envConfig.GEMINI_PRIMARY_MODEL ||
-  'gemini-2.5-pro-latest';
+  'gemini-3.1-pro-preview-customtools';
 export const GEMINI_FAST_MODEL =
-  process.env.GEMINI_FAST_MODEL || envConfig.GEMINI_FAST_MODEL || 'gemini-2.0-flash';
+  process.env.GEMINI_FAST_MODEL ||
+  envConfig.GEMINI_FAST_MODEL ||
+  'gemini-3.1-flash-lite-preview';
 export const GEMINI_MAX_VIDEO_MB = parseInt(
   process.env.GEMINI_MAX_VIDEO_MB || envConfig.GEMINI_MAX_VIDEO_MB || '20',
   10,

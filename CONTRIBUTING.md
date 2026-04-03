@@ -21,7 +21,7 @@
 
 ## Skills
 
-NanoClaw uses [Claude Code skills](https://code.claude.com/docs/en/skills) — markdown files with optional supporting files that teach Claude how to do something. There are four types of skills in NanoClaw, each serving a different purpose.
+NanoFlash uses [Claude Code skills](https://code.claude.com/docs/en/skills) — markdown files with optional supporting files that teach Claude how to do something. There are four types of skills in NanoFlash, each serving a different purpose.
 
 ### Why skills?
 
@@ -31,7 +31,7 @@ Every user should have clean and minimal code that does exactly what they need. 
 
 #### 1. Feature skills (branch-based)
 
-Add capabilities to NanoClaw by merging a git branch. The SKILL.md contains setup instructions; the actual code lives on a `skill/*` branch.
+Add capabilities to NanoFlash by merging a git branch. The SKILL.md contains setup instructions; the actual code lives on a `skill/*` branch.
 
 **Location:** `.claude/skills/` on `main` (instructions only), code on `skill/*` branch
 
@@ -71,7 +71,7 @@ Workflows and guides with no code changes. The SKILL.md is the entire skill — 
 
 **Location:** `.claude/skills/` on `main`
 
-**Examples:** `/setup`, `/debug`, `/customize`, `/update-nanoclaw`, `/update-skills`
+**Examples:** `/setup`, `/debug`, `/customize`, `/update-nanoflash`, `/update-skills`
 
 **Guidelines:**
 - Pure instructions — no code files, no branch merges

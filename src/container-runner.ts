@@ -1,5 +1,5 @@
 /**
- * Container Runner for NanoClaw
+ * Container Runner for NanoFlash
  * Spawns agent execution in containers and handles IPC
  */
 import { ChildProcess, spawn } from 'child_process';
@@ -31,8 +31,8 @@ import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
-const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
-const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
+const OUTPUT_START_MARKER = '---NANOFLASH_OUTPUT_START---';
+const OUTPUT_END_MARKER = '---NANOFLASH_OUTPUT_END---';
 
 export interface ContainerInput {
   prompt: string;
@@ -78,16 +78,10 @@ function buildVolumeMounts(
       readonly: true,
     });
 
-    // Shadow .env so the agent cannot read secrets from the mounted project root.
-    // Credentials are injected by the OneCLI gateway, never exposed to containers.
-    const envFile = path.join(projectRoot, '.env');
-    if (fs.existsSync(envFile)) {
-      mounts.push({
-        hostPath: '/dev/null',
-        containerPath: '/workspace/project/.env',
-        readonly: true,
-      });
-    }
+    // NOTE: .env is visible in the read-only project mount but secrets
+    // (GEMINI_API_KEY, etc.) are passed as env vars — the agent-runner reads
+    // env vars, not .env. Apple Container doesn't support file-level bind
+    // mounts, so we can't shadow .env with /dev/null like Docker can.
 
     // Main gets writable access to the store (SQLite DB) so it can
     // query and write to the database directly.

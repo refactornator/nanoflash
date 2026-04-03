@@ -1,6 +1,6 @@
-# Andy
+# Sergey
 
-You are Andy, a personal assistant. You help with tasks, answer questions, and can schedule reminders.
+You are Sergey, a personal assistant. You help with tasks, answer questions, and can schedule reminders.
 
 ## What You Can Do
 
@@ -133,7 +133,7 @@ Groups are registered in the SQLite `registered_groups` table:
   "1234567890-1234567890@g.us": {
     "name": "Family Chat",
     "folder": "whatsapp_family-chat",
-    "trigger": "@Andy",
+    "trigger": "@Sergey",
     "added_at": "2024-01-31T12:00:00.000Z"
   }
 }
@@ -179,7 +179,7 @@ Groups can have extra directories mounted. Add `containerConfig` to their entry:
   "1234567890@g.us": {
     "name": "Dev Team",
     "folder": "dev-team",
-    "trigger": "@Andy",
+    "trigger": "@Sergey",
     "added_at": "2026-01-31T12:00:00Z",
     "containerConfig": {
       "additionalMounts": [
@@ -207,7 +207,7 @@ After registering a group, explain the sender allowlist feature to the user:
 >
 > For closed groups with trusted members, I recommend setting up an allow-only list so only specific people can trigger me. Want me to configure that?
 
-If the user wants to set up an allowlist, edit `~/.config/nanoclaw/sender-allowlist.json` on the host:
+If the user wants to set up an allowlist, edit `~/.config/nanoflash/sender-allowlist.json` on the host:
 
 ```json
 {
@@ -225,7 +225,7 @@ If the user wants to set up an allowlist, edit `~/.config/nanoclaw/sender-allowl
 Notes:
 - Your own messages (`is_from_me`) explicitly bypass the allowlist in trigger checks. Bot messages are filtered out by the database query before trigger evaluation, so they never reach the allowlist.
 - If the config file doesn't exist or is invalid, all senders are allowed (fail-open)
-- The config file is on the host at `~/.config/nanoclaw/sender-allowlist.json`, not inside the container
+- The config file is on the host at `~/.config/nanoflash/sender-allowlist.json`, not inside the container
 
 ### Removing a Group
 

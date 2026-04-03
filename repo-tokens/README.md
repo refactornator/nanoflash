@@ -34,7 +34,7 @@ Repos using repo-tokens:
 
 | Repo | Badge |
 |------|-------|
-| [NanoClaw](https://github.com/qwibitai/NanoClaw) | ![tokens](https://raw.githubusercontent.com/qwibitai/NanoClaw/main/repo-tokens/badge.svg) |
+| [NanoFlash](https://github.com/qwibitai/NanoFlash) | ![tokens](https://raw.githubusercontent.com/qwibitai/NanoFlash/main/repo-tokens/badge.svg) |
 
 ### Full workflow example
 

@@ -67,8 +67,8 @@ async function readStdin(): Promise<string> {
   });
 }
 
-const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
-const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
+const OUTPUT_START_MARKER = '---NANOFLASH_OUTPUT_START---';
+const OUTPUT_END_MARKER = '---NANOFLASH_OUTPUT_END---';
 
 function writeOutput(output: ContainerOutput): void {
   console.log(OUTPUT_START_MARKER);
@@ -446,7 +446,7 @@ async function main(): Promise<void> {
     writeOutput({ status: 'error', result: null, error: 'GEMINI_API_KEY is not set in the container environment' });
     process.exit(1);
   }
-  const primaryModel = process.env.GEMINI_PRIMARY_MODEL || 'gemini-2.5-pro-latest';
+  const primaryModel = process.env.GEMINI_PRIMARY_MODEL || 'gemini-3.1-pro-preview-customtools';
 
   // Build system instruction from CLAUDE.md files
   const systemParts: string[] = [];
@@ -459,7 +459,7 @@ async function main(): Promise<void> {
     systemParts.push(fs.readFileSync(globalClaudeMdPath, 'utf-8'));
   }
   const systemInstruction = systemParts.join('\n\n---\n\n') ||
-    `You are ${containerInput.assistantName || 'Andy'}, a personal assistant. Your working directory is /workspace/group/.`;
+    `You are ${containerInput.assistantName || 'Sergey'}, a personal assistant. Your working directory is /workspace/group/.`;
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({

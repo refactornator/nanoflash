@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to NanoClaw will be documented in this file.
+All notable changes to NanoFlash will be documented in this file.
 
 For detailed release notes, see the [full changelog on the documentation site](https://docs.nanoclaw.dev/changelog).
 
@@ -126,7 +126,7 @@ For detailed release notes, see the [full changelog on the documentation site](h
 ## [1.1.4] - 2026-03-01
 
 - Added third-party model support
-- Added `/update-nanoclaw` skill for syncing with upstream
+- Added `/update-nanoflash` skill for syncing with upstream
 
 ## [1.1.3] - 2026-02-25
 

@@ -88,16 +88,19 @@ export function ensureContainerRuntimeRunning(): void {
 /** Kill orphaned NanoFlash containers from previous runs. */
 export function cleanupOrphans(): void {
   try {
-    const output = execSync(
-      `${CONTAINER_RUNTIME_BIN} ls --format json`,
-      { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf-8' },
-    );
+    const output = execSync(`${CONTAINER_RUNTIME_BIN} ls --format json`, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      encoding: 'utf-8',
+    });
     const containers = JSON.parse(output || '[]') as Array<{
       configuration?: { id?: string };
     }>;
     const orphans = containers
       .map((c) => c.configuration?.id)
-      .filter((id): id is string => typeof id === 'string' && id.startsWith('nanoflash-'));
+      .filter(
+        (id): id is string =>
+          typeof id === 'string' && id.startsWith('nanoflash-'),
+      );
 
     for (const name of orphans) {
       try {
