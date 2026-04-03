@@ -1,6 +1,6 @@
 # NanoFlash
 
-A Gemini-native personal agent harness. Same architecture as NanoClaw (channels, containers, IPC, SQLite, polling loop) — Gemini replaces Claude Code as the agent inside the container.
+A Gemini-native personal agent harness. Same architecture as [NanoClaw](https://github.com/qwibitai/nanoclaw) (channels, containers, IPC, SQLite, polling loop) — Gemini replaces Claude Code as the agent inside the container.
 
 ---
 
@@ -40,7 +40,7 @@ cd nanoflash
 
 **Built for the individual user.** Fork it, customize it, make it yours. The codebase is small enough that it's safe to modify.
 
-**Gemini-native.** Uses `gemini-2.5-pro-latest` for the agent loop and `gemini-2.0-flash` for media (images, video, voice). Models are configurable via env vars.
+**Gemini-native.** Uses `gemini-3.1-pro-preview-customtools` for the agent loop and `gemini-3.1-flash-lite-preview` for media (images, video, voice). Models are configurable via env vars.
 
 ## What It Supports
 
@@ -104,11 +104,13 @@ Key files:
 
 ```bash
 GEMINI_API_KEY=your-key-here
-GEMINI_PRIMARY_MODEL=gemini-2.5-pro-latest   # optional, this is the default
-GEMINI_FAST_MODEL=gemini-2.0-flash           # optional, used for media analysis
-ASSISTANT_NAME=Sergey                           # trigger word / agent name
-TZ=America/New_York                           # your timezone
+GEMINI_PRIMARY_MODEL=gemini-3.1-pro-preview-customtools  # optional, this is the default
+GEMINI_FAST_MODEL=gemini-3.1-flash-lite-preview          # optional, used for media analysis
+ASSISTANT_NAME=Sergey                                     # trigger word / agent name
+TZ=America/New_York                                       # your timezone
 ```
+
+Credentials are read from `.env` and passed directly to containers as environment variables. No proxy or vault needed — Gemini API keys are free-tier accessible and easy to rotate.
 
 ## FAQ
 
