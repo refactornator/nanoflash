@@ -10,6 +10,10 @@ const envConfig = readEnvFile([
   'ASSISTANT_HAS_OWN_NUMBER',
   'ONECLI_URL',
   'TZ',
+  'GEMINI_API_KEY',
+  'GEMINI_PRIMARY_MODEL',
+  'GEMINI_FAST_MODEL',
+  'GEMINI_MAX_VIDEO_MB',
 ]);
 
 export const ASSISTANT_NAME =
@@ -28,21 +32,39 @@ const HOME_DIR = process.env.HOME || os.homedir();
 export const MOUNT_ALLOWLIST_PATH = path.join(
   HOME_DIR,
   '.config',
-  'nanoclaw',
+  'nanoflash',
   'mount-allowlist.json',
 );
 export const SENDER_ALLOWLIST_PATH = path.join(
   HOME_DIR,
   '.config',
-  'nanoclaw',
+  'nanoflash',
   'sender-allowlist.json',
 );
 export const STORE_DIR = path.resolve(PROJECT_ROOT, 'store');
 export const GROUPS_DIR = path.resolve(PROJECT_ROOT, 'groups');
 export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
 
+// Gemini configuration
+export const GEMINI_API_KEY =
+  process.env.GEMINI_API_KEY || envConfig.GEMINI_API_KEY || '';
+export const GEMINI_PRIMARY_MODEL =
+  process.env.GEMINI_PRIMARY_MODEL ||
+  envConfig.GEMINI_PRIMARY_MODEL ||
+  'gemini-2.5-pro-latest';
+export const GEMINI_FAST_MODEL =
+  process.env.GEMINI_FAST_MODEL || envConfig.GEMINI_FAST_MODEL || 'gemini-2.0-flash';
+export const GEMINI_MAX_VIDEO_MB = parseInt(
+  process.env.GEMINI_MAX_VIDEO_MB || envConfig.GEMINI_MAX_VIDEO_MB || '20',
+  10,
+);
+export const MAX_TOOL_ROUNDS = parseInt(
+  process.env.MAX_TOOL_ROUNDS || '25',
+  10,
+);
+
 export const CONTAINER_IMAGE =
-  process.env.CONTAINER_IMAGE || 'nanoclaw-agent:latest';
+  process.env.CONTAINER_IMAGE || 'nanoflash-agent:latest';
 export const CONTAINER_TIMEOUT = parseInt(
   process.env.CONTAINER_TIMEOUT || '1800000',
   10,

@@ -1,11 +1,11 @@
 ---
 name: capabilities
-description: Show what this NanoClaw instance can do — installed skills, available tools, and system info. Read-only. Use when the user asks what the bot can do, what's installed, or runs /capabilities.
+description: Show what this NanoFlash instance can do — built-in tools, optional tools, and system info. Read-only. Use when the user asks what the bot can do or runs /capabilities.
 ---
 
 # /capabilities — System Capabilities Report
 
-Generate a structured read-only report of what this NanoClaw instance can do.
+Generate a structured read-only report of what this NanoFlash instance can do.
 
 **Main-channel check:** Only the main channel has `/workspace/project` mounted. Run:
 
@@ -22,50 +22,37 @@ Then stop — do not generate the report.
 
 Run these commands and compile the results into the report format below.
 
-### 1. Installed skills
+### 1. Built-in Gemini agent tools
 
-List skill directories available to you:
-
-```bash
-ls -1 /home/node/.claude/skills/ 2>/dev/null || echo "No skills found"
-```
-
-Each directory is an installed skill. The directory name is the skill name (e.g., `agent-browser` → `/agent-browser`).
-
-### 2. Available tools
-
-Read the allowed tools from your SDK configuration. You always have access to:
-- **Core:** Bash, Read, Write, Edit, Glob, Grep
-- **Web:** WebSearch, WebFetch
-- **Orchestration:** Task, TaskOutput, TaskStop, TeamCreate, TeamDelete, SendMessage
-- **Other:** TodoWrite, ToolSearch, Skill, NotebookEdit
-- **MCP:** mcp__nanoclaw__* (messaging, tasks, group management)
-
-### 3. MCP server tools
-
-The NanoClaw MCP server exposes these tools (via `mcp__nanoclaw__*` prefix):
-- `send_message` — send a message to the user/group
+NanoFlash always has these tools available (implemented as Gemini function declarations):
+- `bash` — run shell commands in your sandbox (timeout 120s)
+- `read_file` — read files from the workspace
+- `write_file` — write files to the workspace
+- `list_directory` — list directory contents
+- `send_message` — send a message to the user immediately while still working
+- `web_fetch` — fetch a URL and return the content (timeout 30s, 50KB cap)
 - `schedule_task` — schedule a recurring or one-time task
-- `list_tasks` — list scheduled tasks
-- `pause_task` — pause a scheduled task
-- `resume_task` — resume a paused task
-- `cancel_task` — cancel and delete a task
-- `update_task` — update an existing task
-- `register_group` — register a new chat/group (main only)
 
-### 4. Container skills (Bash tools)
+### 2. Optional container tools (bash executables)
 
-Check for executable tools in the container:
+Check what optional tools are installed:
 
 ```bash
 which agent-browser 2>/dev/null && echo "agent-browser: available" || echo "agent-browser: not found"
 ```
 
-### 5. Group info
+### 3. Model info
 
 ```bash
-ls /workspace/group/CLAUDE.md 2>/dev/null && echo "Group memory: yes" || echo "Group memory: no"
-ls /workspace/extra/ 2>/dev/null && echo "Extra mounts: $(ls /workspace/extra/ 2>/dev/null | wc -l | tr -d ' ')" || echo "Extra mounts: none"
+echo "Primary model: ${GEMINI_PRIMARY_MODEL:-gemini-2.5-pro-latest}"
+echo "Fast model: ${GEMINI_FAST_MODEL:-gemini-2.0-flash}"
+```
+
+### 4. Group info
+
+```bash
+test -f /workspace/group/CLAUDE.md && echo "Group memory: yes" || echo "Group memory: no"
+test -d /workspace/extra && echo "Extra mounts: $(ls /workspace/extra/ 2>/dev/null | wc -l | tr -d ' ')" || echo "Extra mounts: none"
 ```
 
 ## Report format
@@ -73,28 +60,26 @@ ls /workspace/extra/ 2>/dev/null && echo "Extra mounts: $(ls /workspace/extra/ 2
 Present the report as a clean, readable message. Example:
 
 ```
-📋 *NanoClaw Capabilities*
+📋 *NanoFlash Capabilities*
 
-*Installed Skills:*
-• /agent-browser — Browse the web, fill forms, extract data
-• /capabilities — This report
-(list all found skills)
+*Agent:* Gemini (gemini-2.5-pro-latest)
 
-*Tools:*
-• Core: Bash, Read, Write, Edit, Glob, Grep
-• Web: WebSearch, WebFetch
-• Orchestration: Task, TeamCreate, SendMessage
-• MCP: send_message, schedule_task, list_tasks, pause/resume/cancel/update_task, register_group
+*Built-in Tools:*
+• bash — run shell commands in sandbox
+• read_file / write_file / list_directory — file I/O
+• send_message — send progress updates
+• web_fetch — fetch URLs (50KB cap)
+• schedule_task — schedule recurring or one-time tasks
 
-*Container Tools:*
-• agent-browser: ✓
+*Optional Tools:*
+• agent-browser: ✓ (or ✗)
 
 *System:*
 • Group memory: yes/no
 • Extra mounts: N directories
-• Main channel: yes
+• Main channel: yes/no
 ```
 
-Adapt the output based on what you actually find — don't list things that aren't installed.
+Adapt the output based on what you actually find — don't list things that aren't available.
 
 **See also:** `/status` for a quick health check of session, workspace, and tasks.

@@ -8,14 +8,17 @@ const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
 
 // Mock config
 vi.mock('./config.js', () => ({
-  CONTAINER_IMAGE: 'nanoclaw-agent:latest',
+  CONTAINER_IMAGE: 'nanoflash-agent:latest',
   CONTAINER_MAX_OUTPUT_SIZE: 10485760,
   CONTAINER_TIMEOUT: 1800000, // 30min
   DATA_DIR: '/tmp/nanoclaw-test-data',
   GROUPS_DIR: '/tmp/nanoclaw-test-groups',
   IDLE_TIMEOUT: 1800000, // 30min
-  ONECLI_URL: 'http://localhost:10254',
   TIMEZONE: 'America/Los_Angeles',
+  GEMINI_API_KEY: 'test-gemini-key',
+  GEMINI_PRIMARY_MODEL: 'gemini-2.5-pro-latest',
+  GEMINI_FAST_MODEL: 'gemini-2.0-flash',
+  MAX_TOOL_ROUNDS: 25,
 }));
 
 // Mock logger

@@ -16,23 +16,7 @@ You are Andy, a personal assistant. You help with tasks, answer questions, and c
 
 Your output is sent to the user or group.
 
-You also have `mcp__nanoclaw__send_message` which sends a message immediately while you're still working. This is useful when you want to acknowledge a request before starting longer work.
-
-### Internal thoughts
-
-If part of your output is internal reasoning rather than something for the user, wrap it in `<internal>` tags:
-
-```
-<internal>Compiled all three reports, ready to summarize.</internal>
-
-Here are the key findings from the research...
-```
-
-Text inside `<internal>` tags is logged but not sent to the user. If you've already sent the key information via `send_message`, you can wrap the recap in `<internal>` to avoid sending it again.
-
-### Sub-agents and teammates
-
-When working as a sub-agent or teammate, only use `send_message` if instructed to by the main agent.
+You also have a `send_message` tool which sends a message immediately while you're still working. This is useful when you want to acknowledge a request before starting longer work.
 
 ## Memory
 
@@ -77,9 +61,9 @@ Standard Markdown: `**bold**`, `*italic*`, `[links](url)`, `# headings`.
 
 This is the **main channel**, which has elevated privileges.
 
-## Authentication
+## Credentials
 
-Anthropic credentials must be either an API key from console.anthropic.com (`ANTHROPIC_API_KEY`) or a long-lived OAuth token from `claude setup-token` (`CLAUDE_CODE_OAUTH_TOKEN`). Short-lived tokens from the system keychain or `~/.claude/.credentials.json` expire within hours and can cause recurring container 401s. The `/setup` skill walks through this. OneCLI manages credentials (including Anthropic auth) — run `onecli --help`.
+`GEMINI_API_KEY` is injected from the host `.env` file into the container environment. If you see API errors, verify the key is set correctly in `.env` on the host and restart the service.
 
 ## Container Mounts
 
@@ -174,7 +158,7 @@ Fields:
 
 1. Query the database to find the group's JID
 2. Ask the user whether the group should require a trigger word before registering
-3. Use the `register_group` MCP tool with the JID, name, folder, trigger, and the chosen `requiresTrigger` setting
+3. Write the new group entry to `/workspace/project/store/messages.db` registered_groups table (or edit `registered_groups.json` in the data dir)
 4. Optionally include `containerConfig` for additional mounts
 5. The group folder is created automatically: `/workspace/project/groups/{folder-name}/`
 6. Optionally create an initial `CLAUDE.md` for the group
@@ -305,5 +289,5 @@ If a user wants tasks running more than ~2x daily and a script can't reduce agen
 
 - Explain that each wake-up uses API credits and risks rate limits
 - Suggest restructuring with a script that checks the condition first
-- If the user needs an LLM to evaluate data, suggest using an API key with direct Anthropic API calls inside the script
+- If the user needs an LLM to evaluate data, suggest using `GEMINI_API_KEY` (available in the container env) with direct Gemini API calls inside the script
 - Help the user find the minimum viable frequency
