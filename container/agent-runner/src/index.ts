@@ -204,6 +204,42 @@ function toolScheduleTask(
   return `Task ${taskId} scheduled (${scheduleType}: ${scheduleValue}).`;
 }
 
+// ─── Message Search (SQLite) ─────────────────────────────────────────────
+
+const DB_PATH = '/workspace/project/store/messages.db';
+
+function toolSearchMessages(chatJid: string, query?: string, limit?: number): string {
+  try {
+    if (!fs.existsSync(DB_PATH)) return 'Database not available (not main group or store not mounted).';
+    // Dynamic import to avoid crashing if better-sqlite3 isn't available
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Database = require('better-sqlite3');
+    const db = new Database(DB_PATH, { readonly: true });
+    const maxRows = Math.min(limit || 20, 50);
+
+    let rows: Array<{ sender_name: string; content: string; timestamp: string }>;
+    if (query) {
+      rows = db.prepare(
+        `SELECT sender_name, content, timestamp FROM messages
+         WHERE chat_jid = ? AND content LIKE ?
+         ORDER BY timestamp DESC LIMIT ?`
+      ).all(chatJid, `%${query}%`, maxRows);
+    } else {
+      rows = db.prepare(
+        `SELECT sender_name, content, timestamp FROM messages
+         WHERE chat_jid = ?
+         ORDER BY timestamp DESC LIMIT ?`
+      ).all(chatJid, maxRows);
+    }
+    db.close();
+
+    if (rows.length === 0) return query ? `No messages matching "${query}".` : 'No messages found.';
+    return rows.map((r) => `[${r.timestamp}] ${r.sender_name}: ${r.content.slice(0, 300)}`).join('\n');
+  } catch (err) {
+    return `Error searching messages: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
 // ─── Gemini Function Declarations ────────────────────────────────────────
 
 const TOOL_DECLARATIONS: FunctionDeclaration[] = [
@@ -293,6 +329,19 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
       required: ['prompt', 'schedule_type', 'schedule_value'],
     },
   },
+  {
+    name: 'search_messages',
+    description: 'Search the message history database. Use to find past conversations, check delivered emails (content starts with "[Email from"), or recall what was discussed. Only available to main group.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        chat_jid: { type: SchemaType.STRING, description: 'Chat JID to search (use current chat JID for this conversation)' },
+        query: { type: SchemaType.STRING, description: 'Text to search for in message content (optional — omit to get recent messages)' },
+        limit: { type: SchemaType.NUMBER, description: 'Max results to return (default 20, max 50)' },
+      },
+      required: ['chat_jid'],
+    },
+  },
 ];
 
 // ─── Tool Executor ────────────────────────────────────────────────────────
@@ -320,6 +369,8 @@ async function executeTool(
         return await toolWebFetch(String(args.url ?? ''));
       case 'schedule_task':
         return toolScheduleTask(String(args.prompt ?? ''), String(args.schedule_type ?? ''), String(args.schedule_value ?? ''), containerInput.chatJid, containerInput.groupFolder);
+      case 'search_messages':
+        return toolSearchMessages(String(args.chat_jid ?? containerInput.chatJid), args.query ? String(args.query) : undefined, args.limit ? Number(args.limit) : undefined);
       default:
         return `Unknown tool: ${name}`;
     }
