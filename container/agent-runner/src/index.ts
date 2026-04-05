@@ -302,6 +302,27 @@ async function executeTool(
   }
 }
 
+// ─── YouTube URL Detection ───────────────────────────────────────────────
+
+const YOUTUBE_URL_RE = /https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?[^\s]*v=[\w-]+|youtu\.be\/[\w-]+)(?:[^\s]*)?/g;
+
+/**
+ * Extract YouTube URLs from text and build a multipart message.
+ * Gemini natively understands YouTube videos via fileData parts,
+ * so we convert URLs to fileData instead of fetching HTML.
+ */
+function buildMessageParts(text: string): string | Array<{text: string} | {fileData: {fileUri: string}}> {
+  const urls = [...new Set(text.match(YOUTUBE_URL_RE) || [])];
+  if (urls.length === 0) return text;
+
+  const parts: Array<{text: string} | {fileData: {fileUri: string}}> = [];
+  for (const url of urls) {
+    parts.push({ fileData: { fileUri: url } });
+  }
+  parts.push({ text });
+  return parts;
+}
+
 // ─── Gemini Query ─────────────────────────────────────────────────────────
 
 type ChatSession = ReturnType<ReturnType<GoogleGenerativeAI['getGenerativeModel']>['startChat']>;
@@ -316,7 +337,12 @@ async function runGeminiQuery(
   chat: ChatSession,
 ): Promise<string> {
   log(`Running query (${prompt.length} chars)...`);
-  let result: GenerateContentResult = await chat.sendMessage(prompt);
+  const message = buildMessageParts(prompt);
+  if (message !== prompt) {
+    const urls = prompt.match(YOUTUBE_URL_RE) || [];
+    log(`Detected ${urls.length} YouTube URL(s), sending as fileData`);
+  }
+  let result: GenerateContentResult = await chat.sendMessage(message);
   let toolRounds = 0;
 
   while (toolRounds < MAX_TOOL_ROUNDS) {
