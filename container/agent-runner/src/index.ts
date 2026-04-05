@@ -334,18 +334,19 @@ function buildMessageParts(text: string): string | Part[] {
 const HISTORY_PATH = '/workspace/group/conversations/chat-history.json';
 const MAX_HISTORY_TURNS = 40; // Keep last 40 entries (20 user + 20 model turns)
 
+function hasTextOnly(entry: Content): boolean {
+  return (entry.role === 'user' || entry.role === 'model') &&
+    Array.isArray(entry.parts) &&
+    entry.parts.every((p) => 'text' in p);
+}
+
 function loadHistory(): Content[] {
   try {
     if (!fs.existsSync(HISTORY_PATH)) return [];
     const raw = fs.readFileSync(HISTORY_PATH, 'utf-8');
     const history = JSON.parse(raw) as Content[];
     if (!Array.isArray(history)) return [];
-    // Filter to only user/model text turns — skip function call/response
-    // entries which reference tools that may not exist in this session
-    const textOnly = history.filter(
-      (entry) => (entry.role === 'user' || entry.role === 'model') &&
-        entry.parts?.every((p: Record<string, unknown>) => 'text' in p),
-    );
+    const textOnly = history.filter(hasTextOnly);
     const trimmed = textOnly.slice(-MAX_HISTORY_TURNS);
     log(`Loaded ${trimmed.length} history turns (of ${history.length} total)`);
     return trimmed;
@@ -355,14 +356,10 @@ function loadHistory(): Content[] {
   }
 }
 
-function saveHistory(chat: ChatSession): void {
+async function saveHistory(chat: ChatSession): Promise<void> {
   try {
-    const history = chat.getHistory();
-    // Only save user/model text turns — tool calls are session-specific
-    const textOnly = history.filter(
-      (entry: Content) => (entry.role === 'user' || entry.role === 'model') &&
-        entry.parts?.every((p: Record<string, unknown>) => 'text' in p),
-    );
+    const history = await chat.getHistory();
+    const textOnly = history.filter(hasTextOnly);
     const trimmed = textOnly.slice(-MAX_HISTORY_TURNS);
     fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
     fs.writeFileSync(HISTORY_PATH, JSON.stringify(trimmed, null, 2));
@@ -580,7 +577,7 @@ async function main(): Promise<void> {
     while (true) {
       const text = await runGeminiQuery(prompt, containerInput, chat);
       writeOutput({ status: 'success', result: text });
-      saveHistory(chat);
+      await saveHistory(chat);
 
       log('Query ended, waiting for next IPC message...');
       const nextMessage = await waitForIpcMessage();
