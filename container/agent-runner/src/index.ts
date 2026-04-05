@@ -388,8 +388,24 @@ function loadHistory(): Content[] {
     const raw = fs.readFileSync(HISTORY_PATH, 'utf-8');
     const history = JSON.parse(raw) as Content[];
     if (!Array.isArray(history)) return [];
-    const textOnly = history.filter(hasTextOnly);
-    const trimmed = textOnly.slice(-MAX_HISTORY_TURNS);
+    let textOnly = history.filter(hasTextOnly);
+    // Gemini requires history to start with 'user' and alternate roles
+    while (textOnly.length > 0 && textOnly[0].role !== 'user') {
+      textOnly = textOnly.slice(1);
+    }
+    // Ensure alternating user/model pairs
+    const valid: Content[] = [];
+    for (const entry of textOnly) {
+      if (valid.length === 0 && entry.role !== 'user') continue;
+      const lastRole = valid.length > 0 ? valid[valid.length - 1].role : null;
+      if (lastRole === entry.role) continue; // skip consecutive same-role
+      valid.push(entry);
+    }
+    // Must end on 'model' so the next sendMessage is 'user'
+    if (valid.length > 0 && valid[valid.length - 1].role === 'user') {
+      valid.pop();
+    }
+    const trimmed = valid.slice(-MAX_HISTORY_TURNS);
     log(`Loaded ${trimmed.length} history turns (of ${history.length} total)`);
     return trimmed;
   } catch (err) {
