@@ -624,10 +624,15 @@ async function main(): Promise<void> {
     },
   });
   startIpcWatcher({
-    sendMessage: (jid, text) => {
+    sendMessage: (jid, text, replyTo) => {
       const channel = findChannel(channels, jid);
       if (!channel) throw new Error(`No channel for JID: ${jid}`);
-      return channel.sendMessage(jid, text);
+      return channel.sendMessage(jid, text, replyTo);
+    },
+    sendReaction: async (jid, messageId, emoji) => {
+      const channel = findChannel(channels, jid);
+      if (!channel) return;
+      if (channel.sendReaction) await channel.sendReaction(jid, messageId, emoji);
     },
     registeredGroups: () => registeredGroups,
     registerGroup,

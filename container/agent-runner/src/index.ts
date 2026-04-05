@@ -152,11 +152,20 @@ function writeIpcFile(dir: string, data: object): void {
   fs.renameSync(tmpPath, filepath);
 }
 
-function toolSendMessage(chatJid: string, text: string, groupFolder: string): string {
-  writeIpcFile(IPC_MESSAGES_DIR, {
+function toolSendMessage(chatJid: string, text: string, groupFolder: string, replyTo?: string): string {
+  const data: Record<string, string> = {
     type: 'message', chatJid, text, groupFolder, timestamp: new Date().toISOString(),
-  });
+  };
+  if (replyTo) data.replyTo = replyTo;
+  writeIpcFile(IPC_MESSAGES_DIR, data);
   return 'Message sent.';
+}
+
+function toolReact(chatJid: string, messageId: string, emoji: string, groupFolder: string): string {
+  writeIpcFile(IPC_MESSAGES_DIR, {
+    type: 'reaction', chatJid, messageId, emoji, groupFolder, timestamp: new Date().toISOString(),
+  });
+  return `Reacted with ${emoji}.`;
 }
 
 async function toolWebFetch(url: string): Promise<string> {
@@ -238,14 +247,28 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
   {
     name: 'send_message',
-    description: 'Send a message to the user/group immediately while still working. Use for progress updates.',
+    description: 'Send a message to the user/group immediately while still working. Use for progress updates. Supports replying to a specific message.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
         chat_jid: { type: SchemaType.STRING, description: 'Chat JID to send to (use current chat JID)' },
         text: { type: SchemaType.STRING, description: 'Message text' },
+        reply_to: { type: SchemaType.STRING, description: 'Message ID to reply to (from the id attribute in <message>). Creates a threaded reply.' },
       },
       required: ['chat_jid', 'text'],
+    },
+  },
+  {
+    name: 'react',
+    description: 'React to a message with an emoji. Use the message id attribute from the XML. Use this to acknowledge messages, show appreciation, or react naturally.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        chat_jid: { type: SchemaType.STRING, description: 'Chat JID (use current chat JID)' },
+        message_id: { type: SchemaType.STRING, description: 'Message ID to react to (from the id attribute in <message>)' },
+        emoji: { type: SchemaType.STRING, description: 'Emoji to react with (e.g. "👍", "❤️", "😂", "🔥", "👀")' },
+      },
+      required: ['chat_jid', 'message_id', 'emoji'],
     },
   },
   {
@@ -290,7 +313,9 @@ async function executeTool(
       case 'list_directory':
         return toolListDirectory(args.path ? String(args.path) : undefined, containerInput.isMain);
       case 'send_message':
-        return toolSendMessage(String(args.chat_jid ?? containerInput.chatJid), String(args.text ?? ''), containerInput.groupFolder);
+        return toolSendMessage(String(args.chat_jid ?? containerInput.chatJid), String(args.text ?? ''), containerInput.groupFolder, args.reply_to ? String(args.reply_to) : undefined);
+      case 'react':
+        return toolReact(String(args.chat_jid ?? containerInput.chatJid), String(args.message_id ?? ''), String(args.emoji ?? ''), containerInput.groupFolder);
       case 'web_fetch':
         return await toolWebFetch(String(args.url ?? ''));
       case 'schedule_task':
