@@ -40,7 +40,7 @@ cd nanoflash
 
 **Built for the individual user.** Fork it, customize it, make it yours. The codebase is small enough that it's safe to modify.
 
-**Gemini-native.** Uses `gemini-3.1-pro-preview-customtools` for the agent loop and `gemini-3.1-flash-lite-preview` for media (images, video, voice). Models are configurable via env vars.
+**Gemini-native.** Uses `gemini-2.5-flash` by default for both the agent loop and media analysis. Models are configurable via env vars.
 
 ## What It Supports
 
@@ -104,8 +104,8 @@ Key files:
 
 ```bash
 GEMINI_API_KEY=your-key-here
-GEMINI_PRIMARY_MODEL=gemini-3.1-pro-preview-customtools  # optional, this is the default
-GEMINI_FAST_MODEL=gemini-3.1-flash-lite-preview          # optional, used for media analysis
+GEMINI_PRIMARY_MODEL=gemini-2.5-flash                     # optional, this is the default
+GEMINI_FAST_MODEL=gemini-2.5-flash                        # optional, used for media analysis
 ASSISTANT_NAME=Sergey                                     # trigger word / agent name
 TZ=America/New_York                                       # your timezone
 ```

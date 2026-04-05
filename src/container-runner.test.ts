@@ -16,8 +16,8 @@ vi.mock('./config.js', () => ({
   IDLE_TIMEOUT: 1800000, // 30min
   TIMEZONE: 'America/Los_Angeles',
   GEMINI_API_KEY: 'test-gemini-key',
-  GEMINI_PRIMARY_MODEL: 'gemini-3.1-pro-preview-customtools',
-  GEMINI_FAST_MODEL: 'gemini-3.1-flash-lite-preview',
+  GEMINI_PRIMARY_MODEL: 'gemini-2.5-flash',
+  GEMINI_FAST_MODEL: 'gemini-2.5-flash',
   MAX_TOOL_ROUNDS: 25,
 }));
 

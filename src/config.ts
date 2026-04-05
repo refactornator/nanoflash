@@ -50,11 +50,11 @@ export const GEMINI_API_KEY =
 export const GEMINI_PRIMARY_MODEL =
   process.env.GEMINI_PRIMARY_MODEL ||
   envConfig.GEMINI_PRIMARY_MODEL ||
-  'gemini-3.1-pro-preview-customtools';
+  'gemini-2.5-flash';
 export const GEMINI_FAST_MODEL =
   process.env.GEMINI_FAST_MODEL ||
   envConfig.GEMINI_FAST_MODEL ||
-  'gemini-3.1-flash-lite-preview';
+  'gemini-2.5-flash';
 export const GEMINI_MAX_VIDEO_MB = parseInt(
   process.env.GEMINI_MAX_VIDEO_MB || envConfig.GEMINI_MAX_VIDEO_MB || '20',
   10,

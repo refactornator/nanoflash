@@ -559,7 +559,7 @@ async function main(): Promise<void> {
     writeOutput({ status: 'error', result: null, error: 'GEMINI_API_KEY is not set in the container environment' });
     process.exit(1);
   }
-  const primaryModel = process.env.GEMINI_PRIMARY_MODEL || 'gemini-3.1-pro-preview-customtools';
+  const primaryModel = process.env.GEMINI_PRIMARY_MODEL || 'gemini-2.5-flash';
 
   // Build system instruction from CLAUDE.md files
   const systemParts: string[] = [];
