@@ -21,6 +21,7 @@ import {
   GoogleGenerativeAI,
   type Content,
   type FunctionDeclaration,
+  type Part,
   type Tool,
   type GenerateContentResult,
   SchemaType,
@@ -311,13 +312,13 @@ const YOUTUBE_URL_RE = /https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?[^\s]*v=[\w
  * Gemini natively understands YouTube videos via fileData parts,
  * so we convert URLs to fileData instead of fetching HTML.
  */
-function buildMessageParts(text: string): string | Array<{text: string} | {fileData: {fileUri: string}}> {
+function buildMessageParts(text: string): string | Part[] {
   const urls = [...new Set(text.match(YOUTUBE_URL_RE) || [])];
   if (urls.length === 0) return text;
 
-  const parts: Array<{text: string} | {fileData: {fileUri: string}}> = [];
+  const parts: Part[] = [];
   for (const url of urls) {
-    parts.push({ fileData: { fileUri: url } });
+    parts.push({ fileData: { fileUri: url, mimeType: 'video/mp4' } });
   }
   parts.push({ text });
   return parts;
