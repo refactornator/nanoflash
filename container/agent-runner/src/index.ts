@@ -305,7 +305,23 @@ async function executeTool(
 
 // ─── YouTube URL Detection ───────────────────────────────────────────────
 
-const YOUTUBE_URL_RE = /https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?[^\s]*v=[\w-]+|youtu\.be\/[\w-]+)(?:[^\s]*)?/g;
+const YOUTUBE_URL_RE = /https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?[^\s]*v=[\w-]+|music\.youtube\.com\/watch\?[^\s]*v=[\w-]+|youtu\.be\/[\w-]+)(?:[^\s]*)?/g;
+
+/**
+ * Normalize a YouTube URL to www.youtube.com/watch?v=ID format.
+ * Gemini's fileData only accepts youtube.com, not music.youtube.com.
+ */
+function normalizeYoutubeUrl(url: string): string {
+  // music.youtube.com → www.youtube.com
+  const normalized = url.replace('music.youtube.com', 'www.youtube.com');
+  // Extract video ID and rebuild clean URL to avoid extra params
+  const match = normalized.match(/[?&]v=([\w-]+)/);
+  if (match) return `https://www.youtube.com/watch?v=${match[1]}`;
+  // youtu.be/ID
+  const shortMatch = url.match(/youtu\.be\/([\w-]+)/);
+  if (shortMatch) return `https://www.youtube.com/watch?v=${shortMatch[1]}`;
+  return normalized;
+}
 
 /**
  * Extract YouTube URLs from text and build a multipart message.
@@ -313,7 +329,8 @@ const YOUTUBE_URL_RE = /https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?[^\s]*v=[\w
  * so we convert URLs to fileData instead of fetching HTML.
  */
 function buildMessageParts(text: string): string | Part[] {
-  const urls = [...new Set(text.match(YOUTUBE_URL_RE) || [])];
+  const rawUrls = text.match(YOUTUBE_URL_RE) || [];
+  const urls = [...new Set(rawUrls.map(normalizeYoutubeUrl))];
   if (urls.length === 0) return text;
 
   const parts: Part[] = [];
