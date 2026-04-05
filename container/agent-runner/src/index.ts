@@ -320,7 +320,12 @@ function buildMessageParts(text: string): string | Part[] {
   for (const url of urls) {
     parts.push({ fileData: { fileUri: url, mimeType: 'video/mp4' } });
   }
-  parts.push({ text });
+  // Tell the model it has the video content — without this it tries to
+  // web_fetch the URL and complains it can't read transcripts.
+  const hint = urls.length === 1
+    ? `[The YouTube video at ${urls[0]} has been attached and you can see/hear its full content directly. Respond based on the video — do not try to fetch or scrape the URL.]`
+    : `[${urls.length} YouTube videos have been attached and you can see/hear their full content directly. Respond based on the videos — do not try to fetch or scrape the URLs.]`;
+  parts.push({ text: hint + '\n\n' + text });
   return parts;
 }
 
