@@ -329,6 +329,48 @@ function buildMessageParts(text: string): string | Part[] {
   return parts;
 }
 
+// ─── Conversation History Persistence ────────────────────────────────────
+
+const HISTORY_PATH = '/workspace/group/conversations/chat-history.json';
+const MAX_HISTORY_TURNS = 40; // Keep last 40 entries (20 user + 20 model turns)
+
+function loadHistory(): Content[] {
+  try {
+    if (!fs.existsSync(HISTORY_PATH)) return [];
+    const raw = fs.readFileSync(HISTORY_PATH, 'utf-8');
+    const history = JSON.parse(raw) as Content[];
+    if (!Array.isArray(history)) return [];
+    // Filter to only user/model text turns — skip function call/response
+    // entries which reference tools that may not exist in this session
+    const textOnly = history.filter(
+      (entry) => (entry.role === 'user' || entry.role === 'model') &&
+        entry.parts?.every((p: Record<string, unknown>) => 'text' in p),
+    );
+    const trimmed = textOnly.slice(-MAX_HISTORY_TURNS);
+    log(`Loaded ${trimmed.length} history turns (of ${history.length} total)`);
+    return trimmed;
+  } catch (err) {
+    log(`Failed to load history: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+}
+
+function saveHistory(chat: ChatSession): void {
+  try {
+    const history = chat.getHistory();
+    // Only save user/model text turns — tool calls are session-specific
+    const textOnly = history.filter(
+      (entry: Content) => (entry.role === 'user' || entry.role === 'model') &&
+        entry.parts?.every((p: Record<string, unknown>) => 'text' in p),
+    );
+    const trimmed = textOnly.slice(-MAX_HISTORY_TURNS);
+    fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
+    fs.writeFileSync(HISTORY_PATH, JSON.stringify(trimmed, null, 2));
+  } catch (err) {
+    log(`Failed to save history: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 // ─── Gemini Query ─────────────────────────────────────────────────────────
 
 type ChatSession = ReturnType<ReturnType<GoogleGenerativeAI['getGenerativeModel']>['startChat']>;
@@ -500,10 +542,10 @@ async function main(): Promise<void> {
     tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
   });
 
-  // One chat session per container invocation — keeps conversation history
-  // across IPC follow-up messages within the same run.
-  // NOTE: Sessions do not persist between container restarts (Gemini limitation).
-  const chat = model.startChat({ history: [] });
+  // Load conversation history from previous container runs so the agent
+  // retains context across restarts. History is saved after each query.
+  const previousHistory = loadHistory();
+  const chat = model.startChat({ history: previousHistory });
 
   fs.mkdirSync(IPC_INPUT_DIR, { recursive: true });
   // Clean up stale _close sentinel from previous container runs
@@ -533,11 +575,12 @@ async function main(): Promise<void> {
     prompt = `[SCHEDULED TASK]\n\nScript output:\n${JSON.stringify(scriptResult.data, null, 2)}\n\nInstructions:\n${containerInput.prompt}`;
   }
 
-  // Query loop: run Gemini query → emit output → wait for IPC → repeat
+  // Query loop: run Gemini query → emit output → save history → wait for IPC → repeat
   try {
     while (true) {
       const text = await runGeminiQuery(prompt, containerInput, chat);
       writeOutput({ status: 'success', result: text });
+      saveHistory(chat);
 
       log('Query ended, waiting for next IPC message...');
       const nextMessage = await waitForIpcMessage();
