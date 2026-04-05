@@ -249,12 +249,14 @@ export async function runContainerAgent(
     'Container mount configuration',
   );
 
+  const spawnStart = Date.now();
   logger.info(
     {
       group: group.name,
       containerName,
       mountCount: mounts.length,
       isMain: input.isMain,
+      setupMs: spawnStart - startTime,
     },
     'Spawning container agent',
   );

@@ -69,6 +69,10 @@ let messageLoopRunning = false;
 const channels: Channel[] = [];
 const queue = new GroupQueue();
 
+// Event-driven wake: resolve this promise to wake the polling loop immediately
+// instead of waiting for the full POLL_INTERVAL sleep.
+let wakeLoop: (() => void) | null = null;
+
 function loadState(): void {
   lastTimestamp = getRouterState('last_timestamp') || '';
   const agentTs = getRouterState('last_agent_timestamp');
@@ -230,8 +234,14 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     missedMessages[missedMessages.length - 1].timestamp;
   saveState();
 
+  // Latency tracking: measure from newest message timestamp to each phase
+  const newestMsg = missedMessages[missedMessages.length - 1];
+  const msgTime = new Date(newestMsg.timestamp).getTime();
+  const dispatchTime = Date.now();
+  const pickupLatencyMs = dispatchTime - msgTime;
+
   logger.info(
-    { group: group.name, messageCount: missedMessages.length },
+    { group: group.name, messageCount: missedMessages.length, pickupLatencyMs },
     'Processing messages',
   );
 
@@ -253,6 +263,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   let hadError = false;
   let outputSentToUser = false;
 
+  let firstOutputLogged = false;
+
   const output = await runAgent(group, prompt, chatJid, async (result) => {
     // Streaming output callback — called for each agent result
     if (result.result) {
@@ -262,7 +274,20 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           : JSON.stringify(result.result);
       // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
       const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
-      logger.info({ group: group.name }, `Agent output: ${raw.length} chars`);
+
+      const now = Date.now();
+      const e2eMs = now - msgTime;
+      const agentMs = now - dispatchTime;
+      if (!firstOutputLogged) {
+        logger.info(
+          { group: group.name, chars: raw.length, e2eMs, agentMs, pickupLatencyMs },
+          'First agent output (latency)',
+        );
+        firstOutputLogged = true;
+      } else {
+        logger.info({ group: group.name, chars: raw.length, agentMs: now - dispatchTime }, 'Agent output');
+      }
+
       if (text) {
         await channel.sendMessage(chatJid, text);
         outputSentToUser = true;
@@ -507,7 +532,11 @@ async function startMessageLoop(): Promise<void> {
     } catch (err) {
       logger.error({ err }, 'Error in message loop');
     }
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
+    // Sleep until POLL_INTERVAL or until woken by an incoming message
+    await new Promise<void>((resolve) => {
+      wakeLoop = resolve;
+      setTimeout(() => { wakeLoop = null; resolve(); }, POLL_INTERVAL);
+    });
   }
 }
 
@@ -574,6 +603,8 @@ async function main(): Promise<void> {
         }
       }
       storeMessage(msg);
+      // Wake the polling loop immediately instead of waiting up to POLL_INTERVAL
+      if (wakeLoop) { wakeLoop(); wakeLoop = null; }
     },
     onChatMetadata: (
       chatJid: string,
