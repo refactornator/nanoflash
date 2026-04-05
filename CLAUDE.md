@@ -6,42 +6,165 @@ Personal Gemini agent harness. See [README.md](README.md) for philosophy and set
 
 Single Node.js process with skill-based channel system. Channels (WhatsApp, Telegram, Slack, Discord, Gmail) are skills that self-register at startup. Messages route to a Gemini agent loop running in containers (Linux VMs). Each group has isolated filesystem and memory.
 
+## Architecture
+
+```
+User message → Channel (Telegram/WhatsApp/etc.)
+  → SQLite (store message)
+  → Polling loop (src/index.ts, every 2s)
+  → container-runner.ts spawns Apple Container / Docker
+    → agent-runner (container/agent-runner/src/index.ts)
+      → Gemini API with tool loop
+      → stdout: NANOFLASH_OUTPUT_START/END markers
+  → Host parses output, sends response via channel
+  → IPC files for side-effects (messages, reactions, tasks)
+```
+
+**Two-process boundary:** The host process (`src/`) manages channels, DB, IPC, and container lifecycle. The agent process (`container/agent-runner/`) runs inside a Linux container with only mounted directories visible. These communicate via stdin/stdout (initial prompt + output markers) and filesystem IPC (`/workspace/ipc/`).
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `src/index.ts` | Orchestrator: state, message loop, agent invocation |
+| `src/container-runner.ts` | Spawns agent containers, builds mounts and env vars, parses output markers |
 | `src/channels/registry.ts` | Channel registry (self-registration at startup) |
-| `src/ipc.ts` | IPC watcher and task processing |
-| `src/router.ts` | Message formatting and outbound routing |
-| `src/config.ts` | Trigger pattern, paths, intervals, Gemini config |
-| `src/container-runner.ts` | Spawns agent containers with mounts |
+| `src/ipc.ts` | IPC watcher: processes message/reaction/task files from containers |
+| `src/router.ts` | Formats messages as XML for the agent, strips `<internal>` tags on output |
+| `src/config.ts` | All configuration: trigger pattern, paths, intervals, Gemini models |
 | `src/gemini-media.ts` | Host-side image/video/audio analysis via Gemini Flash |
-| `src/task-scheduler.ts` | Runs scheduled tasks |
-| `src/db.ts` | SQLite operations |
-| `groups/{name}/CLAUDE.md` | Per-group memory (isolated) |
-| `container/agent-runner/src/index.ts` | Gemini tool loop (runs inside containers) |
+| `src/task-scheduler.ts` | Runs scheduled tasks on cron/interval/once schedules |
+| `src/db.ts` | SQLite operations (messages, sessions, groups, tasks) |
+| `src/types.ts` | Channel interface, RegisteredGroup, NewMessage, etc. |
+| `groups/{name}/CLAUDE.md` | Per-group system instruction (loaded as Gemini systemInstruction) |
+| `container/agent-runner/src/index.ts` | **The agent** — Gemini tool loop, all tool implementations |
+
+## How to Add a Tool to the Agent
+
+Tools are defined and executed in `container/agent-runner/src/index.ts`. Three steps:
+
+1. **Add the implementation function:**
+```typescript
+function toolMyThing(arg: string): string {
+  // Do work, return result string
+  return 'Done.';
+}
+```
+
+2. **Add the tool declaration** to `TOOL_DECLARATIONS` array:
+```typescript
+{
+  name: 'my_thing',
+  description: 'What this tool does.',
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: {
+      arg: { type: SchemaType.STRING, description: 'The argument' },
+    },
+    required: ['arg'],
+  },
+},
+```
+
+3. **Add the executor case** in the `executeTool` switch:
+```typescript
+case 'my_thing':
+  return toolMyThing(String(args.arg ?? ''));
+```
+
+For tools that need **IPC side-effects** (sending messages, reactions, scheduling tasks), write a JSON file to the IPC directory using `writeIpcFile()`. The host process picks these up in `src/ipc.ts`.
+
+### Conditional tools
+
+Tools can be registered conditionally based on environment variables. Check for credentials at startup and push declarations to `TOOL_DECLARATIONS` only when available. See the calendar tools pattern for an example.
+
+## How to Add a Channel
+
+Channels implement the `Channel` interface from `src/types.ts`:
+
+```typescript
+interface Channel {
+  name: string;
+  connect(): Promise<void>;
+  sendMessage(jid: string, text: string, replyToMessageId?: string): Promise<void>;
+  isConnected(): boolean;
+  ownsJid(jid: string): boolean;
+  disconnect(): Promise<void>;
+  setTyping?(jid: string, isTyping: boolean): Promise<void>;
+  sendReaction?(jid: string, messageId: string, emoji: string): Promise<void>;
+  syncGroups?(force: boolean): Promise<void>;
+}
+```
+
+Steps:
+1. Create `src/channels/mychanel.ts` implementing `Channel`
+2. Call `registerChannel('mychannel', factory)` at module level — the factory receives `ChannelOpts` (onMessage, onChatMetadata, registeredGroups) and returns a Channel instance or null if credentials are missing
+3. Add `import './mychannel.js'` to `src/channels/index.ts`
+
+The channel is responsible for:
+- Connecting to the platform API
+- Calling `opts.onMessage(chatJid, msg)` for each inbound message
+- Calling `opts.onChatMetadata(jid, timestamp, name, channelName, isGroup)` for chat discovery
+- Implementing `sendMessage` for outbound delivery
+- Using a JID prefix to namespace its chats (e.g. `tg:123`, `gmail:threadId`, `dc:456`)
+
+## How Credentials Flow to Containers
+
+```
+.env (host) → src/config.ts reads values
+  → src/container-runner.ts passes as -e env vars to container
+  → container/agent-runner/src/index.ts reads process.env
+```
+
+To pass a new credential to containers:
+1. Read it in `src/config.ts` or directly in `src/container-runner.ts`
+2. Add an `args.push('-e', ...)` line in `buildContainerArgs()` in `container-runner.ts`
+3. Read it from `process.env` in the agent-runner
+
+## IPC Protocol
+
+Containers communicate side-effects via JSON files written to `/workspace/ipc/`:
+
+| Directory | Purpose |
+|-----------|---------|
+| `messages/` | Outbound messages and reactions from the agent |
+| `tasks/` | Task scheduling, group registration, and other control operations |
+| `input/` | Follow-up messages piped to the running container |
+| `input/_close` | Sentinel file — signals the container to exit |
+
+Message IPC file format:
+```json
+{"type": "message", "chatJid": "tg:123", "text": "Hello", "replyTo": "456", "groupFolder": "telegram_main"}
+{"type": "reaction", "chatJid": "tg:123", "messageId": "789", "emoji": "👍", "groupFolder": "telegram_main"}
+```
+
+The host-side handler is in `src/ipc.ts`. New IPC types need a handler case there and wiring in `src/index.ts` where `startIpcWatcher()` is called.
+
+## Message Format (Agent Input)
+
+Messages are formatted as XML by `src/router.ts`:
+```xml
+<context timezone="America/Los_Angeles" />
+<messages>
+<message sender="Liam" time="Apr 4, 2026, 10:30 PM" id="123">Hello</message>
+<message sender="Liam" time="Apr 4, 2026, 10:31 PM" id="124" reply_to="120">
+  <quoted_message from="Sergey">Previous reply</quoted_message>This is a reply</message>
+</messages>
+```
+
+The `id` attribute is the platform message ID — tools like `react` and `send_message` (with `reply_to`) reference these.
+
+## Conversation History
+
+The agent-runner persists chat history to `/workspace/group/conversations/chat-history.json` after each query. On startup, it loads previous history and passes it to `startChat({ history })`. Only user/model text turns are saved (tool calls are session-specific). Capped at 40 turns.
+
+## YouTube Video Support
+
+YouTube URLs in prompts are detected by regex, converted to Gemini `fileData` parts, and sent alongside the text. This gives the model native video understanding without tool calls. `music.youtube.com` URLs are normalized to `www.youtube.com`. A hint is injected telling the model it can see the video directly.
 
 ## Secrets / Credentials
 
 `GEMINI_API_KEY` is read from `.env` and injected directly into the container as an environment variable. Keep `.env` gitignored. To rotate: update `.env` and restart the service.
-
-## Skills
-
-Four types of skills exist in NanoFlash. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full taxonomy and guidelines.
-
-- **Feature skills** — merge a `skill/*` branch to add capabilities (e.g. `/add-telegram`, `/add-slack`)
-- **Utility skills** — ship code files alongside SKILL.md (e.g. `/claw`)
-- **Operational skills** — instruction-only workflows, always on `main` (e.g. `/setup`, `/debug`)
-- **Container skills** — loaded inside agent containers at runtime (`container/skills/`)
-
-| Skill | When to Use |
-|-------|-------------|
-| `/setup` | First-time installation, authentication, service configuration |
-| `/customize` | Adding channels, integrations, changing behavior |
-| `/debug` | Container issues, logs, troubleshooting |
-| `/qodo-pr-resolver` | Fetch and fix Qodo PR review issues interactively or in batch |
-| `/get-qodo-rules` | Load org- and repo-level coding rules from Qodo before code tasks |
 
 ## Development
 
@@ -51,6 +174,7 @@ Run commands directly—don't tell the user to run them.
 npm run dev          # Run with hot reload
 npm run build        # Compile TypeScript
 ./container/build.sh # Rebuild agent container
+npx vitest run       # Run tests
 ```
 
 Service management:
@@ -66,9 +190,7 @@ systemctl --user stop nanoflash
 systemctl --user restart nanoflash
 ```
 
-## Troubleshooting
-
-**WhatsApp not connecting after upgrade:** WhatsApp is a separate skill, not bundled in core. Run `/add-whatsapp` to install it.
+After modifying `container/agent-runner/src/`, the cached copy in `data/sessions/{group}/agent-runner-src/` must be refreshed. The host auto-copies when the source file mtime is newer, so just restart the service. For the container image itself (`container/Dockerfile`), rebuild with `./container/build.sh`.
 
 ## Container Build Cache
 
