@@ -12,7 +12,6 @@ const envConfig = readEnvFile([
   'GEMINI_API_KEY',
   'GEMINI_PRIMARY_MODEL',
   'GEMINI_FAST_MODEL',
-  'GEMINI_MAX_VIDEO_MB',
   'GEMINI_THINKING_BUDGET',
   'GEMINI_CACHE_TTL_SECONDS',
 ]);
@@ -57,10 +56,6 @@ export const GEMINI_FAST_MODEL =
   process.env.GEMINI_FAST_MODEL ||
   envConfig.GEMINI_FAST_MODEL ||
   'gemini-2.5-flash';
-export const GEMINI_MAX_VIDEO_MB = parseInt(
-  process.env.GEMINI_MAX_VIDEO_MB || envConfig.GEMINI_MAX_VIDEO_MB || '20',
-  10,
-);
 export const MAX_TOOL_ROUNDS = parseInt(
   process.env.MAX_TOOL_ROUNDS || '25',
   10,
