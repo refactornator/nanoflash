@@ -280,12 +280,21 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       const agentMs = now - dispatchTime;
       if (!firstOutputLogged) {
         logger.info(
-          { group: group.name, chars: raw.length, e2eMs, agentMs, pickupLatencyMs },
+          {
+            group: group.name,
+            chars: raw.length,
+            e2eMs,
+            agentMs,
+            pickupLatencyMs,
+          },
           'First agent output (latency)',
         );
         firstOutputLogged = true;
       } else {
-        logger.info({ group: group.name, chars: raw.length, agentMs: now - dispatchTime }, 'Agent output');
+        logger.info(
+          { group: group.name, chars: raw.length, agentMs: now - dispatchTime },
+          'Agent output',
+        );
       }
 
       if (text) {
@@ -535,7 +544,10 @@ async function startMessageLoop(): Promise<void> {
     // Sleep until POLL_INTERVAL or until woken by an incoming message
     await new Promise<void>((resolve) => {
       wakeLoop = resolve;
-      setTimeout(() => { wakeLoop = null; resolve(); }, POLL_INTERVAL);
+      setTimeout(() => {
+        wakeLoop = null;
+        resolve();
+      }, POLL_INTERVAL);
     });
   }
 }
@@ -604,7 +616,10 @@ async function main(): Promise<void> {
       }
       storeMessage(msg);
       // Wake the polling loop immediately instead of waiting up to POLL_INTERVAL
-      if (wakeLoop) { wakeLoop(); wakeLoop = null; }
+      if (wakeLoop) {
+        wakeLoop();
+        wakeLoop = null;
+      }
     },
     onChatMetadata: (
       chatJid: string,
@@ -663,7 +678,8 @@ async function main(): Promise<void> {
     sendReaction: async (jid, messageId, emoji) => {
       const channel = findChannel(channels, jid);
       if (!channel) return;
-      if (channel.sendReaction) await channel.sendReaction(jid, messageId, emoji);
+      if (channel.sendReaction)
+        await channel.sendReaction(jid, messageId, emoji);
     },
     registeredGroups: () => registeredGroups,
     registerGroup,

@@ -106,6 +106,28 @@ function resolvePath(filePath: string, isMain: boolean): string {
 
 // ─── Tool Implementations ─────────────────────────────────────────────────
 
+async function toolBrowserOpen(url: string): Promise<string> {
+  return toolBash(`agent-browser open ${JSON.stringify(url)}`);
+}
+
+async function toolBrowserSnapshot(): Promise<string> {
+  return toolBash('agent-browser snapshot');
+}
+
+async function toolBrowserClick(ref?: string, selector?: string): Promise<string> {
+  if (ref) return toolBash(`agent-browser click --ref ${JSON.stringify(ref)}`);
+  if (selector) return toolBash(`agent-browser click --selector ${JSON.stringify(selector)}`);
+  return 'Error: provide ref or selector';
+}
+
+async function toolBrowserType(selector: string, text: string): Promise<string> {
+  return toolBash(`agent-browser type --selector ${JSON.stringify(selector)} --text ${JSON.stringify(text)}`);
+}
+
+async function toolBrowserClose(): Promise<string> {
+  return toolBash('agent-browser close');
+}
+
 async function toolBash(command: string): Promise<string> {
   return new Promise((resolve) => {
     exec(command, { cwd: '/workspace/group', timeout: BASH_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 },
@@ -308,8 +330,50 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'browser_open',
+    description: 'Open a URL in a headless browser. Use this for any page where web_fetch returns empty or unhelpful content — including Instagram, TikTok, Twitter, paywalled articles, and other JS-heavy sites. Always try this before saying a page is inaccessible.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: { url: { type: SchemaType.STRING, description: 'URL to open' } },
+      required: ['url'],
+    },
+  },
+  {
+    name: 'browser_snapshot',
+    description: 'Get the current page content and interactive elements (text, links, buttons, refs). Call this after browser_open to read the page. Even login-gated pages (Instagram, TikTok) expose captions, usernames, hashtags, and comments.',
+    parameters: { type: SchemaType.OBJECT, properties: {} },
+  },
+  {
+    name: 'browser_click',
+    description: 'Click an element on the current page. Use ref from browser_snapshot (preferred) or a CSS selector.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        ref: { type: SchemaType.STRING, description: 'Element ref from browser_snapshot (e.g. "e201")' },
+        selector: { type: SchemaType.STRING, description: 'CSS selector fallback' },
+      },
+    },
+  },
+  {
+    name: 'browser_type',
+    description: 'Type text into an input field on the current page.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        selector: { type: SchemaType.STRING, description: 'CSS selector for the input' },
+        text: { type: SchemaType.STRING, description: 'Text to type' },
+      },
+      required: ['selector', 'text'],
+    },
+  },
+  {
+    name: 'browser_close',
+    description: 'Close the browser when done.',
+    parameters: { type: SchemaType.OBJECT, properties: {} },
+  },
+  {
     name: 'web_fetch',
-    description: 'Fetch a URL and return text content. 30s timeout. Truncated at 50KB.',
+    description: 'Fetch a URL and return text content. 30s timeout. Truncated at 50KB. For JS-heavy pages use browser_open instead.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: { url: { type: SchemaType.STRING, description: 'URL to fetch' } },
@@ -365,6 +429,16 @@ async function executeTool(
         return toolSendMessage(String(args.chat_jid ?? containerInput.chatJid), String(args.text ?? ''), containerInput.groupFolder, args.reply_to ? String(args.reply_to) : undefined);
       case 'react':
         return toolReact(String(args.chat_jid ?? containerInput.chatJid), String(args.message_id ?? ''), String(args.emoji ?? ''), containerInput.groupFolder);
+      case 'browser_open':
+        return await toolBrowserOpen(String(args.url ?? ''));
+      case 'browser_snapshot':
+        return await toolBrowserSnapshot();
+      case 'browser_click':
+        return await toolBrowserClick(args.ref ? String(args.ref) : undefined, args.selector ? String(args.selector) : undefined);
+      case 'browser_type':
+        return await toolBrowserType(String(args.selector ?? ''), String(args.text ?? ''));
+      case 'browser_close':
+        return await toolBrowserClose();
       case 'web_fetch':
         return await toolWebFetch(String(args.url ?? ''));
       case 'schedule_task':
