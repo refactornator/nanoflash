@@ -25,6 +25,7 @@ import {
   type Tool,
   type GenerateContentResult,
   SchemaType,
+  DynamicRetrievalMode,
 } from '@google/generative-ai';
 
 interface ContainerInput {
@@ -719,7 +720,10 @@ async function main(): Promise<void> {
   const model = genAI.getGenerativeModel({
     model: primaryModel,
     systemInstruction,
-    tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
+    tools: [
+      { functionDeclarations: TOOL_DECLARATIONS },
+      { googleSearchRetrieval: { dynamicRetrievalConfig: { mode: DynamicRetrievalMode.MODE_DYNAMIC } } },
+    ],
   });
 
   // Load conversation history from previous container runs so the agent
