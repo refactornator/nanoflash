@@ -190,6 +190,48 @@ function toolReact(chatJid: string, messageId: string, emoji: string, groupFolde
   return `Reacted with ${emoji}.`;
 }
 
+async function toolWebSearch(query: string): Promise<string> {
+  // Try Brave Search API first if key is available
+  const braveKey = process.env.BRAVE_SEARCH_API_KEY;
+  if (braveKey) {
+    const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=8`;
+    const resp = await fetch(url, {
+      headers: { Accept: 'application/json', 'Accept-Encoding': 'gzip', 'X-Subscription-Token': braveKey },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (resp.ok) {
+      const data = await resp.json() as { web?: { results?: Array<{ title: string; url: string; description?: string }> } };
+      const results = data.web?.results || [];
+      if (results.length > 0) {
+        return results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.description || ''}`).join('\n\n');
+      }
+    }
+  }
+
+  // Fallback: DuckDuckGo HTML search (no API key required)
+  const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+  const resp = await fetch(ddgUrl, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NanoFlash/1.0)', Accept: 'text/html' },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!resp.ok) return `Search failed: HTTP ${resp.status}`;
+  const html = await resp.text();
+  // Extract result snippets from DDG HTML
+  const results: string[] = [];
+  const resultRe = /<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>[\s\S]*?<a[^>]+class="result__snippet"[^>]*>([^<]+)<\/a>/g;
+  let m: RegExpExecArray | null;
+  while ((m = resultRe.exec(html)) !== null && results.length < 8) {
+    results.push(`${results.length + 1}. ${m[2].trim()}\n   ${m[1]}\n   ${m[3].trim()}`);
+  }
+  if (results.length === 0) {
+    // Simpler fallback — extract any visible text near result titles
+    const titles = [...html.matchAll(/class="result__title"[^>]*>([\s\S]*?)<\/[ah]/g)].slice(0, 8);
+    if (titles.length > 0) return titles.map((t, i) => `${i + 1}. ${t[1].replace(/<[^>]+>/g, '').trim()}`).join('\n');
+    return 'No results found.';
+  }
+  return results.join('\n\n');
+}
+
 async function toolWebFetch(url: string): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), WEB_FETCH_TIMEOUT_MS);
@@ -330,6 +372,15 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'web_search',
+    description: 'Search the web and return results with titles, URLs, and snippets. Use this to find current information, news, articles, or anything requiring a web search.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: { query: { type: SchemaType.STRING, description: 'Search query' } },
+      required: ['query'],
+    },
+  },
+  {
     name: 'browser_open',
     description: 'Open a URL in a headless browser. Use this for any page where web_fetch returns empty or unhelpful content — including Instagram, TikTok, Twitter, paywalled articles, and other JS-heavy sites. Always try this before saying a page is inaccessible.',
     parameters: {
@@ -429,6 +480,8 @@ async function executeTool(
         return toolSendMessage(String(args.chat_jid ?? containerInput.chatJid), String(args.text ?? ''), containerInput.groupFolder, args.reply_to ? String(args.reply_to) : undefined);
       case 'react':
         return toolReact(String(args.chat_jid ?? containerInput.chatJid), String(args.message_id ?? ''), String(args.emoji ?? ''), containerInput.groupFolder);
+      case 'web_search':
+        return await toolWebSearch(String(args.query ?? ''));
       case 'browser_open':
         return await toolBrowserOpen(String(args.url ?? ''));
       case 'browser_snapshot':
@@ -719,11 +772,7 @@ async function main(): Promise<void> {
   const model = genAI.getGenerativeModel({
     model: primaryModel,
     systemInstruction,
-    tools: [
-      { functionDeclarations: TOOL_DECLARATIONS },
-      // googleSearch is the Gemini 2.x native search tool — not yet typed in the SDK
-      { googleSearch: {} } as unknown as Tool,
-    ],
+    tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
   });
 
   // Load conversation history from previous container runs so the agent
