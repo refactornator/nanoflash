@@ -192,6 +192,59 @@ systemctl --user restart nanoflash
 
 After modifying `container/agent-runner/src/`, the cached copy in `data/sessions/{group}/agent-runner-src/` must be refreshed. The host auto-copies when the source file mtime is newer, so just restart the service. For the container image itself (`container/Dockerfile`), rebuild with `./container/build.sh`.
 
+## Complete Deploy Sequence
+
+After ANY change to source files, follow this exact order:
+
+```bash
+npm run build          # 1. Compile host TypeScript (src/ changes)
+./container/build.sh   # 2. Rebuild container image (container/agent-runner/src/ changes)
+# then restart the service
+```
+
+Skipping step 1 leaves stale `dist/` JS running on the host. Skipping step 2 leaves stale agent code in the container image.
+
+## Log Files
+
+| File | What's in it |
+|------|-------------|
+| `logs/nanoflash.log` | Host process: channel connections, message routing, agent dispatch, IPC |
+| `logs/nanoflash.error.log` | Errors + agent container stderr/stdout for every completed run |
+| `groups/{name}/logs/container-*.log` | Per-run agent log (full stdout+stderr for that container invocation) |
+
+**Diagnosis workflow:** Check `nanoflash.error.log` first — it captures both the host error and the agent's stderr in the same entry. Look for the `logFile` field in each error block to find the full per-run container log.
+
 ## Container Build Cache
 
-The container buildkit caches the build context aggressively. `--no-cache` alone does NOT invalidate COPY steps — the builder's volume retains stale files. To force a truly clean rebuild, prune the builder then re-run `./container/build.sh`.
+The container buildkit caches the build context aggressively. `--no-cache` alone does NOT invalidate COPY steps — the builder's volume retains stale files. To force a truly clean rebuild, reset the builder:
+
+**Apple Container (macOS):**
+```bash
+container builder stop && container builder delete --force && container builder start
+./container/build.sh
+```
+
+**Docker:**
+```bash
+docker builder prune --all --force
+./container/build.sh
+```
+
+## Gemini API Constraints (Context Caching)
+
+The Gemini API has non-obvious rules around context caching that cause `400 INVALID_ARGUMENT` errors:
+
+1. **`cachedContent` is mutually exclusive with `systemInstruction` and `tools` in the chat config.**
+   Everything must be baked into the cache at creation time via `ai.caches.create()` — do not pass them again in `ai.chats.create()`.
+
+2. **`googleSearch` (built-in grounding) and `functionDeclarations` cannot coexist in a cached context.**
+   Solution: cache with `functionDeclarations` only; `googleSearch` grounding is active only when caching is not used.
+
+3. **Stale `cache-state.json` causes repeated 400 failures.** Delete it to force cache recreation:
+   ```bash
+   rm groups/{name}/conversations/cache-state.json
+   ```
+
+Error message signatures:
+- `CachedContent can not be used with GenerateContent request setting system_instruction, tools or tool_config` → tools passed in both cache and chat config
+- `Built-in tools ({google_search}) and Function Calling cannot be combined` → `googleSearch` + `functionDeclarations` in same cached context tools array

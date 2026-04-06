@@ -114,7 +114,11 @@ export interface Channel {
    * Channels that don't (e.g. WhatsApp) can leave it unimplemented; the host
    * transparently falls back to the existing sendMessage() path.
    */
-  streamMessage?(jid: string, text: string, existingId?: string): Promise<string | undefined>;
+  streamMessage?(
+    jid: string,
+    text: string,
+    existingId?: string,
+  ): Promise<string | undefined>;
 }
 
 // Callback type that channels use to deliver inbound messages

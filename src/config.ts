@@ -67,11 +67,15 @@ export const MAX_TOOL_ROUNDS = parseInt(
 );
 // -1 = dynamic (model decides), 0 = disabled, 1–24576 = fixed token budget
 export const GEMINI_THINKING_BUDGET = parseInt(
-  process.env.GEMINI_THINKING_BUDGET || envConfig.GEMINI_THINKING_BUDGET || '-1',
+  process.env.GEMINI_THINKING_BUDGET ||
+    envConfig.GEMINI_THINKING_BUDGET ||
+    '-1',
   10,
 );
 export const GEMINI_CACHE_TTL_SECONDS = parseInt(
-  process.env.GEMINI_CACHE_TTL_SECONDS || envConfig.GEMINI_CACHE_TTL_SECONDS || '3600',
+  process.env.GEMINI_CACHE_TTL_SECONDS ||
+    envConfig.GEMINI_CACHE_TTL_SECONDS ||
+    '3600',
   10,
 );
 

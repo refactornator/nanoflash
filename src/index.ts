@@ -275,72 +275,95 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   const flushStreamEdit = () => {
     const snapshot = streamBuffer;
-    channel.streamMessage?.(chatJid, snapshot, streamingMsgId)
-      .then((id) => { if (id) streamingMsgId = id; })
+    channel
+      .streamMessage?.(chatJid, snapshot, streamingMsgId)
+      .then((id) => {
+        if (id) streamingMsgId = id;
+      })
       .catch((err) => logger.warn({ chatJid, err }, 'Stream edit failed'));
   };
 
   // Only activate streaming if the channel supports live editing.
-  const onStreamChunk: ((text: string) => void) | undefined = channel.streamMessage
-    ? (chunk: string) => {
-        streamBuffer += chunk;
-        if (editTimer) clearTimeout(editTimer);
-        editTimer = setTimeout(flushStreamEdit, 500);
-      }
-    : undefined;
+  const onStreamChunk: ((text: string) => void) | undefined =
+    channel.streamMessage
+      ? (chunk: string) => {
+          streamBuffer += chunk;
+          if (editTimer) clearTimeout(editTimer);
+          editTimer = setTimeout(flushStreamEdit, 500);
+        }
+      : undefined;
   // ──────────────────────────────────────────────────────────────────────
 
-  const output = await runAgent(group, prompt, chatJid, async (result) => {
-    // Called for each agent result (final output or intermediate IPC outputs)
-    if (result.result) {
-      const raw =
-        typeof result.result === 'string'
-          ? result.result
-          : JSON.stringify(result.result);
-      // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
-      const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+  const output = await runAgent(
+    group,
+    prompt,
+    chatJid,
+    async (result) => {
+      // Called for each agent result (final output or intermediate IPC outputs)
+      if (result.result) {
+        const raw =
+          typeof result.result === 'string'
+            ? result.result
+            : JSON.stringify(result.result);
+        // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
+        const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
 
-      const now = Date.now();
-      const e2eMs = now - msgTime;
-      const agentMs = now - dispatchTime;
-      if (!firstOutputLogged) {
-        logger.info(
-          { group: group.name, chars: raw.length, e2eMs, agentMs, pickupLatencyMs },
-          'First agent output (latency)',
-        );
-        firstOutputLogged = true;
-      } else {
-        logger.info(
-          { group: group.name, chars: raw.length, agentMs: now - dispatchTime },
-          'Agent output',
-        );
-      }
-
-      if (text) {
-        if (streamingMsgId) {
-          // Streaming was active: cancel the debounce and do one authoritative
-          // final edit with the fully processed text (internal tags stripped).
-          if (editTimer) { clearTimeout(editTimer); editTimer = null; }
-          await channel.streamMessage?.(chatJid, text, streamingMsgId);
+        const now = Date.now();
+        const e2eMs = now - msgTime;
+        const agentMs = now - dispatchTime;
+        if (!firstOutputLogged) {
+          logger.info(
+            {
+              group: group.name,
+              chars: raw.length,
+              e2eMs,
+              agentMs,
+              pickupLatencyMs,
+            },
+            'First agent output (latency)',
+          );
+          firstOutputLogged = true;
         } else {
-          // No streaming (channel doesn't support it, or no chunks arrived yet):
-          // fall back to normal sendMessage.
-          await channel.sendMessage(chatJid, text);
+          logger.info(
+            {
+              group: group.name,
+              chars: raw.length,
+              agentMs: now - dispatchTime,
+            },
+            'Agent output',
+          );
         }
-        outputSentToUser = true;
+
+        if (text) {
+          if (streamingMsgId) {
+            // Streaming was active: cancel the debounce and do one authoritative
+            // final edit with the fully processed text (internal tags stripped).
+            if (editTimer) {
+              clearTimeout(editTimer);
+              editTimer = null;
+            }
+            await channel.streamMessage?.(chatJid, text, streamingMsgId);
+          } else {
+            // No streaming (channel doesn't support it, or no chunks arrived yet):
+            // fall back to normal sendMessage.
+            await channel.sendMessage(chatJid, text);
+          }
+          outputSentToUser = true;
+        }
+        // Only reset idle timer on actual results, not session-update markers (result: null)
+        resetIdleTimer();
       }
-      // Only reset idle timer on actual results, not session-update markers (result: null)
-      resetIdleTimer();
-    }
 
-    if (result.status === 'success') {
-      queue.notifyIdle(chatJid);
-    }
+      if (result.status === 'success') {
+        queue.notifyIdle(chatJid);
+      }
 
-    if (result.status === 'error') {
-      hadError = true;
-    }
-  }, onStreamChunk);
+      if (result.status === 'error') {
+        hadError = true;
+      }
+    },
+    onStreamChunk,
+  );
 
   await channel.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);

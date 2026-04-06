@@ -224,7 +224,9 @@ describe('container-runner timeout behavior', () => {
 
   it('parses STREAM_CHUNK lines and calls onStreamChunk', async () => {
     const chunks: string[] = [];
-    const onStreamChunk = vi.fn((text: string) => { chunks.push(text); });
+    const onStreamChunk = vi.fn((text: string) => {
+      chunks.push(text);
+    });
     const onOutput = vi.fn(async () => {});
 
     const resultPromise = runContainerAgent(
@@ -236,8 +238,12 @@ describe('container-runner timeout behavior', () => {
     );
 
     // Emit two stream chunks followed by the final output marker
-    fakeProc.stdout.push(`${STREAM_CHUNK_MARKER}${JSON.stringify({ text: 'Hello ' })}\n`);
-    fakeProc.stdout.push(`${STREAM_CHUNK_MARKER}${JSON.stringify({ text: 'world' })}\n`);
+    fakeProc.stdout.push(
+      `${STREAM_CHUNK_MARKER}${JSON.stringify({ text: 'Hello ' })}\n`,
+    );
+    fakeProc.stdout.push(
+      `${STREAM_CHUNK_MARKER}${JSON.stringify({ text: 'world' })}\n`,
+    );
     emitOutputMarker(fakeProc, { status: 'success', result: 'Hello world' });
 
     await vi.advanceTimersByTimeAsync(10);
@@ -261,7 +267,9 @@ describe('container-runner timeout behavior', () => {
     );
 
     // Emit stream chunks — should not throw even without handler
-    fakeProc.stdout.push(`${STREAM_CHUNK_MARKER}${JSON.stringify({ text: 'ignored' })}\n`);
+    fakeProc.stdout.push(
+      `${STREAM_CHUNK_MARKER}${JSON.stringify({ text: 'ignored' })}\n`,
+    );
     emitOutputMarker(fakeProc, { status: 'success', result: 'Done' });
 
     await vi.advanceTimersByTimeAsync(10);

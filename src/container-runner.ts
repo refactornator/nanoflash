@@ -320,9 +320,13 @@ export async function runContainerAgent(
         for (const line of lines) {
           if (line.startsWith(STREAM_CHUNK_MARKER)) {
             try {
-              const payload = JSON.parse(line.slice(STREAM_CHUNK_MARKER.length)) as { text?: string };
+              const payload = JSON.parse(
+                line.slice(STREAM_CHUNK_MARKER.length),
+              ) as { text?: string };
               if (payload.text) onStreamChunk(payload.text);
-            } catch { /* malformed chunk — ignore */ }
+            } catch {
+              /* malformed chunk — ignore */
+            }
           }
         }
       }

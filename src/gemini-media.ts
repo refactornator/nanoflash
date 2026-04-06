@@ -43,7 +43,12 @@ export async function analyzeImage(
     const response = await ai.models.generateContent({
       model: GEMINI_FAST_MODEL,
       contents: [
-        { inlineData: { mimeType: mimeType || 'image/jpeg', data: buffer.toString('base64') } },
+        {
+          inlineData: {
+            mimeType: mimeType || 'image/jpeg',
+            data: buffer.toString('base64'),
+          },
+        },
         prompt,
       ],
     });
@@ -110,7 +115,12 @@ export async function transcribeAudio(
     const response = await ai.models.generateContent({
       model: GEMINI_FAST_MODEL,
       contents: [
-        { inlineData: { mimeType: mimeType || 'audio/ogg', data: buffer.toString('base64') } },
+        {
+          inlineData: {
+            mimeType: mimeType || 'audio/ogg',
+            data: buffer.toString('base64'),
+          },
+        },
         'Transcribe this audio message. Return only the transcribed text, nothing else.',
       ],
     });

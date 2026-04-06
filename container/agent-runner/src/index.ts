@@ -564,12 +564,13 @@ const CACHE_STATE_PATH = '/workspace/group/conversations/cache-state.json';
 interface CacheState {
   cacheId: string;
   instructionHash: string;
+  toolsHash: string;
   model: string;
   expiresAt: string; // ISO timestamp
 }
 
-function hashInstruction(instruction: string): string {
-  return crypto.createHash('sha256').update(instruction).digest('hex').slice(0, 16);
+function hashString(value: string): string {
+  return crypto.createHash('sha256').update(value).digest('hex').slice(0, 16);
 }
 
 function loadCacheState(): CacheState | null {
@@ -585,19 +586,22 @@ function saveCacheState(state: CacheState): void {
 }
 
 /**
- * Get a valid cached content ID for the given system instruction, or create one.
+ * Get a valid cached content ID for the given system instruction and tools,
+ * or create one. The Gemini API requires that tools be baked into the cache at
+ * creation time — they must NOT be passed again in the chat config.
  * Returns null if caching is unavailable (instruction too short, API error, etc.).
  * Falls back gracefully — never throws.
  */
 async function getOrCreateCache(
   ai: GoogleGenAI, model: string,
-  systemInstruction: string, ttlSeconds: number,
+  systemInstruction: string, tools: object[], ttlSeconds: number,
 ): Promise<string | null> {
-  const hash = hashInstruction(systemInstruction);
+  const instructionHash = hashString(systemInstruction);
+  const toolsHash = hashString(JSON.stringify(tools));
   const cached = loadCacheState();
 
-  // Reuse existing cache if hash matches and it won't expire within 5 minutes
-  if (cached && cached.instructionHash === hash && cached.model === model) {
+  // Reuse existing cache if both hashes match and it won't expire within 5 minutes
+  if (cached && cached.instructionHash === instructionHash && cached.toolsHash === toolsHash && cached.model === model) {
     const expiresAt = new Date(cached.expiresAt).getTime();
     if (Date.now() < expiresAt - 5 * 60 * 1000) {
       log(`Using existing cache: ${cached.cacheId}`);
@@ -613,14 +617,16 @@ async function getOrCreateCache(
   }
 
   try {
+    // IMPORTANT: tools must be included in the cache, not in the chat config.
+    // Passing tools in both places causes a 400 INVALID_ARGUMENT error.
     const cache = await ai.caches.create({
       model,
-      config: { systemInstruction, ttl: `${ttlSeconds}s` },
+      config: { systemInstruction, tools, ttl: `${ttlSeconds}s` },
     });
     const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
     const cacheId = cache.name ?? '';
     if (!cacheId) { log('Cache created but returned no name, skipping'); return null; }
-    saveCacheState({ cacheId, instructionHash: hash, model, expiresAt });
+    saveCacheState({ cacheId, instructionHash, toolsHash, model, expiresAt });
     log(`Created cache: ${cacheId}`);
     return cacheId;
   } catch (err) {
@@ -828,16 +834,23 @@ async function main(): Promise<void> {
   // per-request token cost for groups with large CLAUDE.md files.
   // Falls back silently if the instruction is too short or the API rejects it.
   const cacheTtlSeconds = parseInt(process.env.GEMINI_CACHE_TTL_SECONDS || '3600', 10);
-  const cacheId = await getOrCreateCache(ai, primaryModel, systemInstruction, cacheTtlSeconds);
+  // googleSearch (built-in grounding) cannot be combined with functionDeclarations
+  // inside a cached context — the Gemini API rejects the combination with 400.
+  // We cache with function calling only; grounding is added on the non-cached path.
+  const toolsForCache = [{ functionDeclarations: TOOL_DECLARATIONS }];
+  const toolsWithGrounding = [{ googleSearch: {} }, { functionDeclarations: TOOL_DECLARATIONS }];
+  const cacheId = await getOrCreateCache(ai, primaryModel, systemInstruction, toolsForCache, cacheTtlSeconds);
 
   // Load conversation history from previous container runs so the agent
   // retains context across restarts. History is saved after each query.
   const previousHistory = loadHistory();
 
-  // IMPORTANT: never pass both cachedContent and systemInstruction — API returns 400.
+  // IMPORTANT: when cachedContent is used, do NOT also pass systemInstruction or
+  // tools — the API returns 400. Both are already baked into the cache.
+  // Trade-off: googleSearch grounding is unavailable when caching is active.
   const chatConfig = cacheId
-    ? { cachedContent: cacheId, tools: [{ googleSearch: {} }, { functionDeclarations: TOOL_DECLARATIONS }], ...thinkingConfigEntry }
-    : { systemInstruction, tools: [{ googleSearch: {} }, { functionDeclarations: TOOL_DECLARATIONS }], ...thinkingConfigEntry };
+    ? { cachedContent: cacheId, ...thinkingConfigEntry }
+    : { systemInstruction, tools: toolsWithGrounding, ...thinkingConfigEntry };
 
   const chat = ai.chats.create({
     model: primaryModel,
