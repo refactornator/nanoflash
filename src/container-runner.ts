@@ -12,8 +12,10 @@ import {
   CONTAINER_TIMEOUT,
   DATA_DIR,
   GEMINI_API_KEY,
+  GEMINI_CACHE_TTL_SECONDS,
   GEMINI_FAST_MODEL,
   GEMINI_PRIMARY_MODEL,
+  GEMINI_THINKING_BUDGET,
   GROUPS_DIR,
   IDLE_TIMEOUT,
   MAX_TOOL_ROUNDS,
@@ -33,6 +35,8 @@ import { RegisteredGroup } from './types.js';
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOFLASH_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOFLASH_OUTPUT_END---';
+// Streaming text chunk marker — each line carrying a partial response token
+const STREAM_CHUNK_MARKER = '---NANOFLASH_STREAM_CHUNK---';
 
 export interface ContainerInput {
   prompt: string;
@@ -196,6 +200,8 @@ async function buildContainerArgs(
   args.push('-e', `GEMINI_PRIMARY_MODEL=${GEMINI_PRIMARY_MODEL}`);
   args.push('-e', `GEMINI_FAST_MODEL=${GEMINI_FAST_MODEL}`);
   args.push('-e', `MAX_TOOL_ROUNDS=${MAX_TOOL_ROUNDS}`);
+  args.push('-e', `GEMINI_THINKING_BUDGET=${GEMINI_THINKING_BUDGET}`);
+  args.push('-e', `GEMINI_CACHE_TTL_SECONDS=${GEMINI_CACHE_TTL_SECONDS}`);
 
   // Run as host user so bind-mounted files are accessible.
   // Skip when running as root (uid 0), as the container's node user (uid 1000),
@@ -225,6 +231,7 @@ export async function runContainerAgent(
   input: ContainerInput,
   onProcess: (proc: ChildProcess, containerName: string) => void,
   onOutput?: (output: ContainerOutput) => Promise<void>,
+  onStreamChunk?: (text: string) => void,
 ): Promise<ContainerOutput> {
   const startTime = Date.now();
 
@@ -281,6 +288,9 @@ export async function runContainerAgent(
 
     // Streaming output: parse OUTPUT_START/END marker pairs as they arrive
     let parseBuffer = '';
+    // Separate line buffer for stream chunk parsing — kept independent so it
+    // never corrupts the OUTPUT_START/END pair parser above.
+    let chunkLineBuffer = '';
     let newSessionId: string | undefined;
     let outputChain = Promise.resolve();
 
@@ -299,6 +309,21 @@ export async function runContainerAgent(
           );
         } else {
           stdout += chunk;
+        }
+      }
+
+      // Parse STREAM_CHUNK lines and relay to caller (line-by-line; separate buffer)
+      if (onStreamChunk) {
+        chunkLineBuffer += chunk;
+        const lines = chunkLineBuffer.split('\n');
+        chunkLineBuffer = lines.pop() ?? ''; // keep last incomplete line
+        for (const line of lines) {
+          if (line.startsWith(STREAM_CHUNK_MARKER)) {
+            try {
+              const payload = JSON.parse(line.slice(STREAM_CHUNK_MARKER.length)) as { text?: string };
+              if (payload.text) onStreamChunk(payload.text);
+            } catch { /* malformed chunk — ignore */ }
+          }
         }
       }
 

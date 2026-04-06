@@ -262,11 +262,36 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   await channel.setTyping?.(chatJid, true);
   let hadError = false;
   let outputSentToUser = false;
-
   let firstOutputLogged = false;
 
+  // ── Streaming live-edit state ──────────────────────────────────────────
+  // Chunks arrive from the agent in real-time via onStreamChunk. We debounce
+  // edits to avoid hammering the channel API: at most one edit per 500 ms.
+  // The final onOutput callback always does one last edit/send with the
+  // complete, canonicalized text (internal tags stripped, etc.).
+  let streamBuffer = '';
+  let streamingMsgId: string | undefined;
+  let editTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const flushStreamEdit = () => {
+    const snapshot = streamBuffer;
+    channel.streamMessage?.(chatJid, snapshot, streamingMsgId)
+      .then((id) => { if (id) streamingMsgId = id; })
+      .catch((err) => logger.warn({ chatJid, err }, 'Stream edit failed'));
+  };
+
+  // Only activate streaming if the channel supports live editing.
+  const onStreamChunk: ((text: string) => void) | undefined = channel.streamMessage
+    ? (chunk: string) => {
+        streamBuffer += chunk;
+        if (editTimer) clearTimeout(editTimer);
+        editTimer = setTimeout(flushStreamEdit, 500);
+      }
+    : undefined;
+  // ──────────────────────────────────────────────────────────────────────
+
   const output = await runAgent(group, prompt, chatJid, async (result) => {
-    // Streaming output callback — called for each agent result
+    // Called for each agent result (final output or intermediate IPC outputs)
     if (result.result) {
       const raw =
         typeof result.result === 'string'
@@ -280,13 +305,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       const agentMs = now - dispatchTime;
       if (!firstOutputLogged) {
         logger.info(
-          {
-            group: group.name,
-            chars: raw.length,
-            e2eMs,
-            agentMs,
-            pickupLatencyMs,
-          },
+          { group: group.name, chars: raw.length, e2eMs, agentMs, pickupLatencyMs },
           'First agent output (latency)',
         );
         firstOutputLogged = true;
@@ -298,7 +317,16 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       }
 
       if (text) {
-        await channel.sendMessage(chatJid, text);
+        if (streamingMsgId) {
+          // Streaming was active: cancel the debounce and do one authoritative
+          // final edit with the fully processed text (internal tags stripped).
+          if (editTimer) { clearTimeout(editTimer); editTimer = null; }
+          await channel.streamMessage?.(chatJid, text, streamingMsgId);
+        } else {
+          // No streaming (channel doesn't support it, or no chunks arrived yet):
+          // fall back to normal sendMessage.
+          await channel.sendMessage(chatJid, text);
+        }
         outputSentToUser = true;
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)
@@ -312,7 +340,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (result.status === 'error') {
       hadError = true;
     }
-  });
+  }, onStreamChunk);
 
   await channel.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
@@ -345,6 +373,7 @@ async function runAgent(
   prompt: string,
   chatJid: string,
   onOutput?: (output: ContainerOutput) => Promise<void>,
+  onStreamChunk?: (text: string) => void,
 ): Promise<'success' | 'error'> {
   const isMain = group.isMain === true;
   const sessionId = sessions[group.folder];
@@ -400,6 +429,7 @@ async function runAgent(
       (proc, containerName) =>
         queue.registerProcess(chatJid, proc, containerName, group.folder),
       wrappedOnOutput,
+      onStreamChunk,
     );
 
     if (output.newSessionId) {

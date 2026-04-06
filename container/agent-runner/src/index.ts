@@ -18,14 +18,14 @@ import fs from 'fs';
 import path from 'path';
 import { execFile, exec } from 'child_process';
 import {
-  GoogleGenerativeAI,
+  GoogleGenAI,
+  type Chat,
   type Content,
+  type FunctionCall,
   type FunctionDeclaration,
   type Part,
-  type Tool,
-  type GenerateContentResult,
-  SchemaType,
-} from '@google/generative-ai';
+  Type,
+} from '@google/genai';
 
 interface ContainerInput {
   prompt: string;
@@ -70,6 +70,9 @@ async function readStdin(): Promise<string> {
 
 const OUTPUT_START_MARKER = '---NANOFLASH_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOFLASH_OUTPUT_END---';
+// Each line prefixed with this marker carries a streaming text chunk from the
+// agent to the host. The host can relay these in real-time to the channel.
+const STREAM_CHUNK_MARKER = '---NANOFLASH_STREAM_CHUNK---';
 
 function writeOutput(output: ContainerOutput): void {
   console.log(OUTPUT_START_MARKER);
@@ -190,47 +193,6 @@ function toolReact(chatJid: string, messageId: string, emoji: string, groupFolde
   return `Reacted with ${emoji}.`;
 }
 
-async function toolWebSearch(query: string): Promise<string> {
-  // Try Brave Search API first if key is available
-  const braveKey = process.env.BRAVE_SEARCH_API_KEY;
-  if (braveKey) {
-    const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=8`;
-    const resp = await fetch(url, {
-      headers: { Accept: 'application/json', 'Accept-Encoding': 'gzip', 'X-Subscription-Token': braveKey },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (resp.ok) {
-      const data = await resp.json() as { web?: { results?: Array<{ title: string; url: string; description?: string }> } };
-      const results = data.web?.results || [];
-      if (results.length > 0) {
-        return results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.description || ''}`).join('\n\n');
-      }
-    }
-  }
-
-  // Fallback: DuckDuckGo HTML search (no API key required)
-  const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-  const resp = await fetch(ddgUrl, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NanoFlash/1.0)', Accept: 'text/html' },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!resp.ok) return `Search failed: HTTP ${resp.status}`;
-  const html = await resp.text();
-  // Extract result snippets from DDG HTML
-  const results: string[] = [];
-  const resultRe = /<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>[\s\S]*?<a[^>]+class="result__snippet"[^>]*>([^<]+)<\/a>/g;
-  let m: RegExpExecArray | null;
-  while ((m = resultRe.exec(html)) !== null && results.length < 8) {
-    results.push(`${results.length + 1}. ${m[2].trim()}\n   ${m[1]}\n   ${m[3].trim()}`);
-  }
-  if (results.length === 0) {
-    // Simpler fallback — extract any visible text near result titles
-    const titles = [...html.matchAll(/class="result__title"[^>]*>([\s\S]*?)<\/[ah]/g)].slice(0, 8);
-    if (titles.length > 0) return titles.map((t, i) => `${i + 1}. ${t[1].replace(/<[^>]+>/g, '').trim()}`).join('\n');
-    return 'No results found.';
-  }
-  return results.join('\n\n');
-}
 
 async function toolWebFetch(url: string): Promise<string> {
   const controller = new AbortController();
@@ -311,8 +273,8 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'bash',
     description: 'Run a shell command in /workspace/group/. Returns stdout, stderr and exit code. Timeout 120s.',
     parameters: {
-      type: SchemaType.OBJECT,
-      properties: { command: { type: SchemaType.STRING, description: 'Shell command to execute' } },
+      type: Type.OBJECT,
+      properties: { command: { type: Type.STRING, description: 'Shell command to execute' } },
       required: ['command'],
     },
   },
@@ -320,8 +282,8 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'read_file',
     description: 'Read a file. Relative paths resolve to /workspace/group/ (or /workspace/project/ for main group).',
     parameters: {
-      type: SchemaType.OBJECT,
-      properties: { path: { type: SchemaType.STRING, description: 'File path' } },
+      type: Type.OBJECT,
+      properties: { path: { type: Type.STRING, description: 'File path' } },
       required: ['path'],
     },
   },
@@ -329,10 +291,10 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'write_file',
     description: 'Write content to a file. Creates parent directories as needed.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        path: { type: SchemaType.STRING, description: 'File path to write' },
-        content: { type: SchemaType.STRING, description: 'Content to write' },
+        path: { type: Type.STRING, description: 'File path to write' },
+        content: { type: Type.STRING, description: 'Content to write' },
       },
       required: ['path', 'content'],
     },
@@ -341,19 +303,19 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'list_directory',
     description: 'List files and directories. Each line: d=directory, f=file, l=symlink.',
     parameters: {
-      type: SchemaType.OBJECT,
-      properties: { path: { type: SchemaType.STRING, description: 'Directory path (default: workspace root)' } },
+      type: Type.OBJECT,
+      properties: { path: { type: Type.STRING, description: 'Directory path (default: workspace root)' } },
     },
   },
   {
     name: 'send_message',
     description: 'Send a message to the user/group immediately while still working. Use for progress updates. Supports replying to a specific message.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        chat_jid: { type: SchemaType.STRING, description: 'Chat JID to send to (use current chat JID)' },
-        text: { type: SchemaType.STRING, description: 'Message text' },
-        reply_to: { type: SchemaType.STRING, description: 'Message ID to reply to (from the id attribute in <message>). Creates a threaded reply.' },
+        chat_jid: { type: Type.STRING, description: 'Chat JID to send to (use current chat JID)' },
+        text: { type: Type.STRING, description: 'Message text' },
+        reply_to: { type: Type.STRING, description: 'Message ID to reply to (from the id attribute in <message>). Creates a threaded reply.' },
       },
       required: ['chat_jid', 'text'],
     },
@@ -362,46 +324,37 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'react',
     description: 'React to a message with an emoji. Use the message id attribute from the XML. Use this to acknowledge messages, show appreciation, or react naturally.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        chat_jid: { type: SchemaType.STRING, description: 'Chat JID (use current chat JID)' },
-        message_id: { type: SchemaType.STRING, description: 'Message ID to react to (from the id attribute in <message>)' },
-        emoji: { type: SchemaType.STRING, description: 'Emoji to react with (e.g. "👍", "❤️", "😂", "🔥", "👀")' },
+        chat_jid: { type: Type.STRING, description: 'Chat JID (use current chat JID)' },
+        message_id: { type: Type.STRING, description: 'Message ID to react to (from the id attribute in <message>)' },
+        emoji: { type: Type.STRING, description: 'Emoji to react with (e.g. "👍", "❤️", "😂", "🔥", "👀")' },
       },
       required: ['chat_jid', 'message_id', 'emoji'],
-    },
-  },
-  {
-    name: 'web_search',
-    description: 'Search the web and return results with titles, URLs, and snippets. Use this to find current information, news, articles, or anything requiring a web search.',
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: { query: { type: SchemaType.STRING, description: 'Search query' } },
-      required: ['query'],
     },
   },
   {
     name: 'browser_open',
     description: 'Open a URL in a headless browser. Use this for any page where web_fetch returns empty or unhelpful content — including Instagram, TikTok, Twitter, paywalled articles, and other JS-heavy sites. Always try this before saying a page is inaccessible.',
     parameters: {
-      type: SchemaType.OBJECT,
-      properties: { url: { type: SchemaType.STRING, description: 'URL to open' } },
+      type: Type.OBJECT,
+      properties: { url: { type: Type.STRING, description: 'URL to open' } },
       required: ['url'],
     },
   },
   {
     name: 'browser_snapshot',
     description: 'Get the current page content and interactive elements (text, links, buttons, refs). Call this after browser_open to read the page. Even login-gated pages (Instagram, TikTok) expose captions, usernames, hashtags, and comments.',
-    parameters: { type: SchemaType.OBJECT, properties: {} },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: 'browser_click',
     description: 'Click an element on the current page. Use ref from browser_snapshot (preferred) or a CSS selector.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        ref: { type: SchemaType.STRING, description: 'Element ref from browser_snapshot (e.g. "e201")' },
-        selector: { type: SchemaType.STRING, description: 'CSS selector fallback' },
+        ref: { type: Type.STRING, description: 'Element ref from browser_snapshot (e.g. "e201")' },
+        selector: { type: Type.STRING, description: 'CSS selector fallback' },
       },
     },
   },
@@ -409,10 +362,10 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'browser_type',
     description: 'Type text into an input field on the current page.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        selector: { type: SchemaType.STRING, description: 'CSS selector for the input' },
-        text: { type: SchemaType.STRING, description: 'Text to type' },
+        selector: { type: Type.STRING, description: 'CSS selector for the input' },
+        text: { type: Type.STRING, description: 'Text to type' },
       },
       required: ['selector', 'text'],
     },
@@ -420,14 +373,14 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'browser_close',
     description: 'Close the browser when done.',
-    parameters: { type: SchemaType.OBJECT, properties: {} },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: 'web_fetch',
     description: 'Fetch a URL and return text content. 30s timeout. Truncated at 50KB. For JS-heavy pages use browser_open instead.',
     parameters: {
-      type: SchemaType.OBJECT,
-      properties: { url: { type: SchemaType.STRING, description: 'URL to fetch' } },
+      type: Type.OBJECT,
+      properties: { url: { type: Type.STRING, description: 'URL to fetch' } },
       required: ['url'],
     },
   },
@@ -435,11 +388,11 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'schedule_task',
     description: 'Schedule a recurring or one-time task. The agent will run with the given prompt at the scheduled time.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        prompt: { type: SchemaType.STRING, description: 'What the agent should do when the task runs' },
-        schedule_type: { type: SchemaType.STRING, description: '"cron", "interval" (ms), or "once" (local timestamp)' },
-        schedule_value: { type: SchemaType.STRING, description: 'cron: "0 9 * * *" | interval: "3600000" | once: "2026-02-01T15:30:00"' },
+        prompt: { type: Type.STRING, description: 'What the agent should do when the task runs' },
+        schedule_type: { type: Type.STRING, description: '"cron", "interval" (ms), or "once" (local timestamp)' },
+        schedule_value: { type: Type.STRING, description: 'cron: "0 9 * * *" | interval: "3600000" | once: "2026-02-01T15:30:00"' },
       },
       required: ['prompt', 'schedule_type', 'schedule_value'],
     },
@@ -448,11 +401,11 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'search_messages',
     description: 'Search the message history database. Use to find past conversations, check delivered emails (content starts with "[Email from"), or recall what was discussed. Only available to main group.',
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        chat_jid: { type: SchemaType.STRING, description: 'Chat JID to search (use current chat JID for this conversation)' },
-        query: { type: SchemaType.STRING, description: 'Text to search for in message content (optional — omit to get recent messages)' },
-        limit: { type: SchemaType.NUMBER, description: 'Max results to return (default 20, max 50)' },
+        chat_jid: { type: Type.STRING, description: 'Chat JID to search (use current chat JID for this conversation)' },
+        query: { type: Type.STRING, description: 'Text to search for in message content (optional — omit to get recent messages)' },
+        limit: { type: Type.NUMBER, description: 'Max results to return (default 20, max 50)' },
       },
       required: ['chat_jid'],
     },
@@ -480,8 +433,6 @@ async function executeTool(
         return toolSendMessage(String(args.chat_jid ?? containerInput.chatJid), String(args.text ?? ''), containerInput.groupFolder, args.reply_to ? String(args.reply_to) : undefined);
       case 'react':
         return toolReact(String(args.chat_jid ?? containerInput.chatJid), String(args.message_id ?? ''), String(args.emoji ?? ''), containerInput.groupFolder);
-      case 'web_search':
-        return await toolWebSearch(String(args.query ?? ''));
       case 'browser_open':
         return await toolBrowserOpen(String(args.url ?? ''));
       case 'browser_snapshot':
@@ -592,9 +543,9 @@ function loadHistory(): Content[] {
   }
 }
 
-async function saveHistory(chat: ChatSession): Promise<void> {
+async function saveHistory(chat: Chat): Promise<void> {
   try {
-    const history = await chat.getHistory();
+    const history = chat.getHistory();
     const textOnly = history.filter(hasTextOnly);
     const trimmed = textOnly.slice(-MAX_HISTORY_TURNS);
     fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
@@ -604,18 +555,112 @@ async function saveHistory(chat: ChatSession): Promise<void> {
   }
 }
 
-// ─── Gemini Query ─────────────────────────────────────────────────────────
+// ─── Context Caching ─────────────────────────────────────────────────────
 
-type ChatSession = ReturnType<ReturnType<GoogleGenerativeAI['getGenerativeModel']>['startChat']>;
+import crypto from 'crypto';
+
+const CACHE_STATE_PATH = '/workspace/group/conversations/cache-state.json';
+
+interface CacheState {
+  cacheId: string;
+  instructionHash: string;
+  model: string;
+  expiresAt: string; // ISO timestamp
+}
+
+function hashInstruction(instruction: string): string {
+  return crypto.createHash('sha256').update(instruction).digest('hex').slice(0, 16);
+}
+
+function loadCacheState(): CacheState | null {
+  try {
+    if (!fs.existsSync(CACHE_STATE_PATH)) return null;
+    return JSON.parse(fs.readFileSync(CACHE_STATE_PATH, 'utf-8')) as CacheState;
+  } catch { return null; }
+}
+
+function saveCacheState(state: CacheState): void {
+  fs.mkdirSync(path.dirname(CACHE_STATE_PATH), { recursive: true });
+  fs.writeFileSync(CACHE_STATE_PATH, JSON.stringify(state, null, 2));
+}
 
 /**
- * Run a user prompt through Gemini with the tool loop.
- * Returns the final text response.
+ * Get a valid cached content ID for the given system instruction, or create one.
+ * Returns null if caching is unavailable (instruction too short, API error, etc.).
+ * Falls back gracefully — never throws.
+ */
+async function getOrCreateCache(
+  ai: GoogleGenAI, model: string,
+  systemInstruction: string, ttlSeconds: number,
+): Promise<string | null> {
+  const hash = hashInstruction(systemInstruction);
+  const cached = loadCacheState();
+
+  // Reuse existing cache if hash matches and it won't expire within 5 minutes
+  if (cached && cached.instructionHash === hash && cached.model === model) {
+    const expiresAt = new Date(cached.expiresAt).getTime();
+    if (Date.now() < expiresAt - 5 * 60 * 1000) {
+      log(`Using existing cache: ${cached.cacheId}`);
+      return cached.cacheId;
+    }
+    log('Cache expiring soon, refreshing...');
+  }
+
+  // Rough token estimate: ~4 chars per token. Flash minimum: 1024 tokens.
+  if (systemInstruction.length / 4 < 1024) {
+    log(`System instruction too short for caching (${systemInstruction.length} chars), skipping`);
+    return null;
+  }
+
+  try {
+    const cache = await ai.caches.create({
+      model,
+      config: { systemInstruction, ttl: `${ttlSeconds}s` },
+    });
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+    const cacheId = cache.name ?? '';
+    if (!cacheId) { log('Cache created but returned no name, skipping'); return null; }
+    saveCacheState({ cacheId, instructionHash: hash, model, expiresAt });
+    log(`Created cache: ${cacheId}`);
+    return cacheId;
+  } catch (err) {
+    log(`Cache creation failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+// ─── Gemini Query ─────────────────────────────────────────────────────────
+
+/**
+ * Consume one streaming response turn. Writes STREAM_CHUNK markers to stdout
+ * for each text chunk so the host can relay them to the channel in real-time.
+ * Returns the accumulated full text and any function calls from this turn.
+ */
+async function consumeStream(
+  stream: AsyncGenerator<import('@google/genai').GenerateContentResponse>,
+): Promise<{ text: string; functionCalls: FunctionCall[] }> {
+  let text = '';
+  const functionCalls: FunctionCall[] = [];
+  for await (const chunk of stream) {
+    if (chunk.text) {
+      text += chunk.text;
+      process.stdout.write(`${STREAM_CHUNK_MARKER}${JSON.stringify({ text: chunk.text })}\n`);
+    }
+    if (chunk.functionCalls?.length) {
+      functionCalls.push(...chunk.functionCalls);
+    }
+  }
+  return { text, functionCalls };
+}
+
+/**
+ * Run a user prompt through Gemini with the streaming tool loop.
+ * Streams text tokens to stdout as they arrive; returns the full response text.
  */
 async function runGeminiQuery(
   prompt: string,
   containerInput: ContainerInput,
-  chat: ChatSession,
+  chat: Chat,
 ): Promise<string> {
   log(`Running query (${prompt.length} chars)...`);
   const message = buildMessageParts(prompt);
@@ -623,32 +668,36 @@ async function runGeminiQuery(
     const urls = prompt.match(YOUTUBE_URL_RE) || [];
     log(`Detected ${urls.length} YouTube URL(s), sending as fileData`);
   }
-  let result: GenerateContentResult = await chat.sendMessage(message);
+
+  const firstStream = await chat.sendMessageStream({ message });
+  let { text: fullText, functionCalls } = await consumeStream(firstStream);
   let toolRounds = 0;
 
-  while (toolRounds < MAX_TOOL_ROUNDS) {
-    const functionCalls = result.response.functionCalls();
-    if (!functionCalls || functionCalls.length === 0) break;
+  while (toolRounds < MAX_TOOL_ROUNDS && functionCalls.length > 0) {
     toolRounds++;
-    log(`Tool round ${toolRounds}: ${functionCalls.map((c) => c.name).join(', ')}`);
+    log(`Tool round ${toolRounds}: ${functionCalls.map((c) => c.name ?? '?').join(', ')}`);
 
-    const functionResponses = await Promise.all(
+    const functionResponses: Part[] = await Promise.all(
       functionCalls.map(async (call) => {
-        const output = await executeTool(call.name, call.args as Record<string, unknown>, containerInput);
-        log(`  ${call.name} → ${output.slice(0, 120)}`);
-        return { functionResponse: { name: call.name, response: { result: output } } };
+        const toolName = call.name ?? '';
+        const output = await executeTool(toolName, call.args ?? {}, containerInput);
+        log(`  ${toolName} → ${output.slice(0, 120)}`);
+        return { functionResponse: { name: toolName, response: { result: output } } } satisfies Part;
       }),
     );
-    result = await chat.sendMessage(functionResponses as Parameters<ChatSession['sendMessage']>[0]);
+
+    const toolStream = await chat.sendMessageStream({ message: functionResponses });
+    const turn = await consumeStream(toolStream);
+    fullText += turn.text;
+    functionCalls = turn.functionCalls;
   }
 
   if (toolRounds >= MAX_TOOL_ROUNDS) {
     log(`Warning: reached MAX_TOOL_ROUNDS (${MAX_TOOL_ROUNDS}), returning current response`);
   }
 
-  const text = result.response.text();
-  log(`Query complete: ${text.length} chars, ${toolRounds} tool rounds`);
-  return text;
+  log(`Query complete: ${fullText.length} chars, ${toolRounds} tool rounds`);
+  return fullText;
 }
 
 // ─── IPC Helpers ──────────────────────────────────────────────────────────
@@ -768,17 +817,33 @@ async function main(): Promise<void> {
   const systemInstruction = systemParts.join('\n\n---\n\n') ||
     `You are ${containerInput.assistantName || 'Sergey'}, a personal assistant. Your working directory is /workspace/group/.`;
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: primaryModel,
-    systemInstruction,
-    tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
-  });
+  const ai = new GoogleGenAI({ apiKey });
+
+  // Thinking mode: -1 = dynamic (model decides), 0 = disabled, >0 = fixed budget
+  const thinkingBudget = parseInt(process.env.GEMINI_THINKING_BUDGET || '-1', 10);
+  const supportsThinking = primaryModel.includes('2.5-flash') || primaryModel.includes('2.5-pro');
+  const thinkingConfigEntry = supportsThinking && thinkingBudget !== 0 ? { thinkingConfig: { thinkingBudget } } : {};
+
+  // Context caching: cache the system instruction server-side to reduce
+  // per-request token cost for groups with large CLAUDE.md files.
+  // Falls back silently if the instruction is too short or the API rejects it.
+  const cacheTtlSeconds = parseInt(process.env.GEMINI_CACHE_TTL_SECONDS || '3600', 10);
+  const cacheId = await getOrCreateCache(ai, primaryModel, systemInstruction, cacheTtlSeconds);
 
   // Load conversation history from previous container runs so the agent
   // retains context across restarts. History is saved after each query.
   const previousHistory = loadHistory();
-  const chat = model.startChat({ history: previousHistory });
+
+  // IMPORTANT: never pass both cachedContent and systemInstruction — API returns 400.
+  const chatConfig = cacheId
+    ? { cachedContent: cacheId, tools: [{ googleSearch: {} }, { functionDeclarations: TOOL_DECLARATIONS }], ...thinkingConfigEntry }
+    : { systemInstruction, tools: [{ googleSearch: {} }, { functionDeclarations: TOOL_DECLARATIONS }], ...thinkingConfigEntry };
+
+  const chat = ai.chats.create({
+    model: primaryModel,
+    config: chatConfig,
+    history: previousHistory,
+  });
 
   fs.mkdirSync(IPC_INPUT_DIR, { recursive: true });
   // Clean up stale _close sentinel from previous container runs

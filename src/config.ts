@@ -13,6 +13,8 @@ const envConfig = readEnvFile([
   'GEMINI_PRIMARY_MODEL',
   'GEMINI_FAST_MODEL',
   'GEMINI_MAX_VIDEO_MB',
+  'GEMINI_THINKING_BUDGET',
+  'GEMINI_CACHE_TTL_SECONDS',
 ]);
 
 export const ASSISTANT_NAME =
@@ -61,6 +63,15 @@ export const GEMINI_MAX_VIDEO_MB = parseInt(
 );
 export const MAX_TOOL_ROUNDS = parseInt(
   process.env.MAX_TOOL_ROUNDS || '25',
+  10,
+);
+// -1 = dynamic (model decides), 0 = disabled, 1–24576 = fixed token budget
+export const GEMINI_THINKING_BUDGET = parseInt(
+  process.env.GEMINI_THINKING_BUDGET || envConfig.GEMINI_THINKING_BUDGET || '-1',
+  10,
+);
+export const GEMINI_CACHE_TTL_SECONDS = parseInt(
+  process.env.GEMINI_CACHE_TTL_SECONDS || envConfig.GEMINI_CACHE_TTL_SECONDS || '3600',
   10,
 );
 

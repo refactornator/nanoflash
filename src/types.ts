@@ -101,6 +101,20 @@ export interface Channel {
   sendReaction?(jid: string, messageId: string, emoji: string): Promise<void>;
   // Optional: sync group/chat names from the platform.
   syncGroups?(force: boolean): Promise<void>;
+  /**
+   * Optional: send or live-edit a streaming message.
+   *
+   * Called repeatedly as text tokens arrive from the agent. On the first call
+   * (existingId === undefined) the channel sends a new message and returns its
+   * ID. On subsequent calls the channel edits that message in-place and returns
+   * the same ID.  Returns undefined if the send/edit failed — the host will
+   * fall back to a normal sendMessage() for the final result.
+   *
+   * Channels that support message editing (e.g. Telegram) implement this.
+   * Channels that don't (e.g. WhatsApp) can leave it unimplemented; the host
+   * transparently falls back to the existing sendMessage() path.
+   */
+  streamMessage?(jid: string, text: string, existingId?: string): Promise<string | undefined>;
 }
 
 // Callback type that channels use to deliver inbound messages
