@@ -25,7 +25,6 @@ import {
   type Tool,
   type GenerateContentResult,
   SchemaType,
-  DynamicRetrievalMode,
 } from '@google/generative-ai';
 
 interface ContainerInput {
@@ -722,7 +721,8 @@ async function main(): Promise<void> {
     systemInstruction,
     tools: [
       { functionDeclarations: TOOL_DECLARATIONS },
-      { googleSearchRetrieval: { dynamicRetrievalConfig: { mode: DynamicRetrievalMode.MODE_DYNAMIC } } },
+      // googleSearch is the Gemini 2.x native search tool — not yet typed in the SDK
+      { googleSearch: {} } as unknown as Tool,
     ],
   });
 
