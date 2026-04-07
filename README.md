@@ -48,9 +48,10 @@ cd nanoflash
 - **Isolated group context** — Each group has its own `CLAUDE.md` memory, isolated filesystem, and container sandbox.
 - **Main channel** — Your private channel (self-chat) for admin control; every group is completely isolated.
 - **Scheduled tasks** — Recurring jobs that run the Gemini agent and can message you back.
-- **Web access** — Fetch content from URLs (built-in `web_fetch` tool).
+- **Web access** — `web_fetch` for URL content, `web_search` for Google results, and headless browser automation (`agent-browser`) for JS-heavy pages.
+- **YouTube search** — `youtube_search` tool returns real video titles, channels, and working URLs via the YouTube Data API. Requires a `YOUTUBE_API_KEY` (free, no OAuth needed). Without the key the tool is simply absent — everything else still works.
 - **Container isolation** — Agents are sandboxed in Docker or Apple Container.
-- **Media analysis** — Host-side image, video, and voice transcription via Gemini Flash.
+- **Media analysis** — Image, video (up to 2 GB via Gemini File API), and audio analysis and transcription via Gemini Flash.
 - **Optional integrations** — Add Gmail, voice transcription, and more via skills.
 
 ## Usage
@@ -108,6 +109,9 @@ GEMINI_PRIMARY_MODEL=gemini-2.5-flash                     # optional, this is th
 GEMINI_FAST_MODEL=gemini-2.5-flash                        # optional, used for media analysis
 ASSISTANT_NAME=Sergey                                     # trigger word / agent name
 TZ=America/New_York                                       # your timezone
+
+# Optional integrations (tool is silently absent when key is missing)
+YOUTUBE_API_KEY=your-key-here                             # YouTube Data API v3 key — enables youtube_search tool
 ```
 
 Credentials are read from `.env` and passed directly to containers as environment variables. No proxy or vault needed — Gemini API keys are free-tier accessible and easy to rotate.

@@ -32,7 +32,7 @@ User message → Channel (Telegram/WhatsApp/etc.)
 | `src/ipc.ts` | IPC watcher: processes message/reaction/task files from containers |
 | `src/router.ts` | Formats messages as XML for the agent, strips `<internal>` tags on output |
 | `src/config.ts` | All configuration: trigger pattern, paths, intervals, Gemini models |
-| `src/gemini-media.ts` | Host-side image/video/audio analysis via Gemini Flash |
+| `src/gemini-media.ts` | Host-side media analysis — images inline, video/audio via Gemini File API (up to 2 GB) |
 | `src/task-scheduler.ts` | Runs scheduled tasks on cron/interval/once schedules |
 | `src/db.ts` | SQLite operations (messages, sessions, groups, tasks) |
 | `src/types.ts` | Channel interface, RegisteredGroup, NewMessage, etc. |
@@ -158,9 +158,19 @@ The `id` attribute is the platform message ID — tools like `react` and `send_m
 
 The agent-runner persists chat history to `/workspace/group/conversations/chat-history.json` after each query. On startup, it loads previous history and passes it to `startChat({ history })`. Only user/model text turns are saved (tool calls are session-specific). Capped at 40 turns.
 
-## YouTube Video Support
+## YouTube
 
+### Video understanding
 YouTube URLs in prompts are detected by regex, converted to Gemini `fileData` parts, and sent alongside the text. This gives the model native video understanding without tool calls. `music.youtube.com` URLs are normalized to `www.youtube.com`. A hint is injected telling the model it can see the video directly.
+
+### YouTube search tool
+The `youtube_search` tool in `container/agent-runner/src/index.ts` queries the YouTube Data API v3 and returns real video titles, channels, publish dates, and working URLs. It is registered conditionally — only when `YOUTUBE_API_KEY` is present in the container environment. To enable it:
+1. Enable **YouTube Data API v3** in Google Cloud Console
+2. Create an API key (no OAuth required)
+3. Add `YOUTUBE_API_KEY=your-key` to `.env`
+4. The key is passed to containers automatically via `src/container-runner.ts`
+
+Without the key the tool is silently absent and the agent falls back to browser scraping.
 
 ## Secrets / Credentials
 

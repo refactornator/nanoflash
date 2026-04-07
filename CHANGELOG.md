@@ -4,6 +4,25 @@ All notable changes to NanoFlash will be documented in this file.
 
 For detailed release notes, see the [full changelog on the documentation site](https://docs.nanoclaw.dev/changelog).
 
+## [Unreleased] - 2026-04-07
+
+### Added
+- **`youtube_search` tool** — searches YouTube via the Data API v3 and returns real video titles, channels, publish dates, and working URLs. Eliminates hallucinated links from browser scraping. Requires `YOUTUBE_API_KEY` in `.env`; tool is silently absent when the key is missing.
+- **Gemini File API for video and audio** — `analyzeVideo` and `transcribeAudio` in `src/gemini-media.ts` now upload media via the File API instead of sending inline base64. Raises the practical limit from ~15 MB to 2 GB. Images remain inline (no upload round-trip needed).
+- **Native Google Search grounding** — agent uses Gemini's built-in `googleSearch` tool when caching is inactive, removing the need for an external search API key.
+- **Headless browser automation** — `agent-browser` available inside the container sandbox for JS-heavy pages, form filling, and element interaction.
+- **`web_search` tool** — Google web search available as a dedicated tool alongside `web_fetch`.
+- **Context caching** — system instruction and tool declarations are cached server-side via the Gemini Cache API, reducing per-request token cost for groups with large `CLAUDE.md` files.
+- **Streaming token output** — agent streams tokens to the host via `---NANOFLASH_STREAM_CHUNK---` stdout markers; channels can implement `streamMessage()` to show live edits while the agent is still thinking.
+- **Thinking mode** — Gemini extended thinking enabled with configurable budget via `GEMINI_THINKING_BUDGET`.
+
+### Fixed
+- **Mid-session cache expiry** — if a Gemini context cache expires while a container is still alive (handling follow-up IPC messages), the agent now transparently recreates the cache and continues rather than crashing with a `403 CachedContent not found` error.
+
+### Changed
+- Migrated from `@google/generative-ai` to `@google/genai` SDK throughout.
+- `GEMINI_MAX_VIDEO_MB` config removed — no longer relevant with the File API.
+
 ## [1.2.36] - 2026-03-26
 
 - [BREAKING] Replaced pino logger with built-in logger. WhatsApp users must re-merge the WhatsApp fork to pick up the Baileys logger compatibility fix: `git fetch whatsapp main && git merge whatsapp/main`. If the `whatsapp` remote is not configured: `git remote add whatsapp https://github.com/qwibitai/nanoclaw-whatsapp.git`.
