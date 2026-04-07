@@ -14,6 +14,7 @@ const envConfig = readEnvFile([
   'GEMINI_FAST_MODEL',
   'GEMINI_THINKING_BUDGET',
   'GEMINI_CACHE_TTL_SECONDS',
+  'YOUTUBE_API_KEY',
 ]);
 
 export const ASSISTANT_NAME =
@@ -67,6 +68,9 @@ export const GEMINI_THINKING_BUDGET = parseInt(
     '-1',
   10,
 );
+export const YOUTUBE_API_KEY =
+  process.env.YOUTUBE_API_KEY || envConfig.YOUTUBE_API_KEY || '';
+
 export const GEMINI_CACHE_TTL_SECONDS = parseInt(
   process.env.GEMINI_CACHE_TTL_SECONDS ||
     envConfig.GEMINI_CACHE_TTL_SECONDS ||

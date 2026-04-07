@@ -20,6 +20,7 @@ import {
   IDLE_TIMEOUT,
   MAX_TOOL_ROUNDS,
   TIMEZONE,
+  YOUTUBE_API_KEY,
 } from './config.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
@@ -204,8 +205,7 @@ async function buildContainerArgs(
   args.push('-e', `GEMINI_CACHE_TTL_SECONDS=${GEMINI_CACHE_TTL_SECONDS}`);
 
   // Optional integrations — only injected when the key is present
-  const youtubeApiKey = process.env.YOUTUBE_API_KEY || '';
-  if (youtubeApiKey) args.push('-e', `YOUTUBE_API_KEY=${youtubeApiKey}`);
+  if (YOUTUBE_API_KEY) args.push('-e', `YOUTUBE_API_KEY=${YOUTUBE_API_KEY}`);
 
   // Run as host user so bind-mounted files are accessible.
   // Skip when running as root (uid 0), as the container's node user (uid 1000),
