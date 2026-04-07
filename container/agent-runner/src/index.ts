@@ -848,13 +848,22 @@ async function main(): Promise<void> {
   // IMPORTANT: when cachedContent is used, do NOT also pass systemInstruction or
   // tools — the API returns 400. Both are already baked into the cache.
   // Trade-off: googleSearch grounding is unavailable when caching is active.
-  const chatConfig = cacheId
-    ? { cachedContent: cacheId, ...thinkingConfigEntry }
-    : { systemInstruction, tools: toolsWithGrounding, ...thinkingConfigEntry };
+  const buildChatConfig = (id: string | null) =>
+    id
+      ? { cachedContent: id, ...thinkingConfigEntry }
+      : { systemInstruction, tools: toolsWithGrounding, ...thinkingConfigEntry };
 
-  const chat = ai.chats.create({
+  // Helper: return a fresh chat using the most up-to-date cache, preserving history.
+  // Call this before each follow-up query so a mid-session cache expiry never
+  // causes a 403 "CachedContent not found" crash — we just recreate and continue.
+  const refreshChat = async (history: any[]) => {
+    const freshCacheId = await getOrCreateCache(ai, primaryModel, systemInstruction, toolsForCache, cacheTtlSeconds);
+    return ai.chats.create({ model: primaryModel, config: buildChatConfig(freshCacheId), history });
+  };
+
+  let chat = ai.chats.create({
     model: primaryModel,
-    config: chatConfig,
+    config: buildChatConfig(cacheId),
     history: previousHistory,
   });
 
@@ -902,6 +911,11 @@ async function main(): Promise<void> {
 
       log(`Got follow-up message (${nextMessage.length} chars), starting new query`);
       prompt = nextMessage;
+
+      // Refresh the chat session before each follow-up query. This is a no-op
+      // when the cache is still valid, but recreates it if it has expired —
+      // preventing the 403 "CachedContent not found" crash mid-session.
+      chat = await refreshChat(chat.getHistory());
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
