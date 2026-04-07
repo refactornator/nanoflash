@@ -412,6 +412,53 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
 ];
 
+// ─── YouTube Search ───────────────────────────────────────────────────────
+
+const youtubeApiKey = process.env.YOUTUBE_API_KEY || '';
+
+async function toolYoutubeSearch(query: string, maxResults: number = 5): Promise<string> {
+  if (!youtubeApiKey) return 'YouTube search not configured (YOUTUBE_API_KEY not set).';
+  const n = Math.min(Math.max(1, maxResults), 10);
+  const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=${n}&key=${youtubeApiKey}`;
+  let resp: Response;
+  try {
+    resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+  } catch (err) {
+    return `YouTube search request failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    return `YouTube API error ${resp.status}: ${body.slice(0, 300)}`;
+  }
+  const data = await resp.json() as any;
+  if (!data.items?.length) return 'No results found.';
+  return (data.items as any[]).map((item, i) => {
+    const videoId = item.id?.videoId ?? '';
+    const title = item.snippet?.title ?? '(no title)';
+    const channel = item.snippet?.channelTitle ?? '';
+    const published = item.snippet?.publishedAt?.slice(0, 10) ?? '';
+    return `${i + 1}. ${title}\n   Channel: ${channel}  •  ${published}\n   https://www.youtube.com/watch?v=${videoId}`;
+  }).join('\n\n');
+}
+
+if (youtubeApiKey) {
+  TOOL_DECLARATIONS.push({
+    name: 'youtube_search',
+    description: 'Search YouTube for videos. Returns titles, channel names, publish dates, and working direct URLs. Use this instead of browser scraping whenever the user asks for a YouTube video.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: { type: Type.STRING, description: 'Search query, e.g. "Slayyyter Daddy AF official"' },
+        max_results: { type: Type.INTEGER, description: 'Number of results to return (1–10, default 5)' },
+      },
+      required: ['query'],
+    },
+  });
+  log('YouTube search tool enabled');
+} else {
+  log('YouTube search not available (YOUTUBE_API_KEY not set)');
+}
+
 // ─── Tool Executor ────────────────────────────────────────────────────────
 
 async function executeTool(
@@ -445,6 +492,8 @@ async function executeTool(
         return await toolBrowserClose();
       case 'web_fetch':
         return await toolWebFetch(String(args.url ?? ''));
+      case 'youtube_search':
+        return await toolYoutubeSearch(String(args.query ?? ''), args.max_results ? Number(args.max_results) : 5);
       case 'schedule_task':
         return toolScheduleTask(String(args.prompt ?? ''), String(args.schedule_type ?? ''), String(args.schedule_value ?? ''), containerInput.chatJid, containerInput.groupFolder);
       case 'search_messages':
