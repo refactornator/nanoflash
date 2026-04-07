@@ -90,6 +90,11 @@ export const MAX_MESSAGES_PER_PROMPT = Math.max(
 );
 export const IPC_POLL_INTERVAL = 1000;
 export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10); // 30min default — how long to keep container alive after last result
+// If a container has been alive longer than MAX_SESSION_AGE_MS, the idle
+// timeout drops to SESSION_IDLE_TIMEOUT_MS so stale long-running sessions
+// don't accumulate unbounded context.
+export const MAX_SESSION_AGE_MS = 60 * 60 * 1000; // 1 hour
+export const SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 min
 export const MAX_CONCURRENT_CONTAINERS = Math.max(
   1,
   parseInt(process.env.MAX_CONCURRENT_CONTAINERS || '5', 10) || 5,

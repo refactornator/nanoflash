@@ -8,7 +8,9 @@ import {
   GROUPS_DIR,
   IDLE_TIMEOUT,
   MAX_MESSAGES_PER_PROMPT,
+  MAX_SESSION_AGE_MS,
   POLL_INTERVAL,
+  SESSION_IDLE_TIMEOUT_MS,
   TIMEZONE,
 } from './config.js';
 import './channels/index.js';
@@ -245,18 +247,25 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     'Processing messages',
   );
 
-  // Track idle timer for closing stdin when agent is idle
+  // Track idle timer for closing stdin when agent is idle.
+  // For long-lived sessions (> MAX_SESSION_AGE_MS), use a shorter idle
+  // timeout so stale containers don't accumulate unbounded context.
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   const resetIdleTimer = () => {
     if (idleTimer) clearTimeout(idleTimer);
+    const age = queue.getContainerAge(chatJid);
+    const effectiveTimeout =
+      age !== null && age > MAX_SESSION_AGE_MS
+        ? SESSION_IDLE_TIMEOUT_MS
+        : IDLE_TIMEOUT;
     idleTimer = setTimeout(() => {
       logger.debug(
-        { group: group.name },
+        { group: group.name, effectiveTimeout, age },
         'Idle timeout, closing container stdin',
       );
       queue.closeStdin(chatJid);
-    }, IDLE_TIMEOUT);
+    }, effectiveTimeout);
   };
 
   await channel.setTyping?.(chatJid, true);

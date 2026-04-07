@@ -25,6 +25,7 @@ interface GroupState {
   containerName: string | null;
   groupFolder: string | null;
   retryCount: number;
+  startedAt: number | null;
 }
 
 export class GroupQueue {
@@ -49,6 +50,7 @@ export class GroupQueue {
         containerName: null,
         groupFolder: null,
         retryCount: 0,
+        startedAt: null,
       };
       this.groups.set(groupJid, state);
     }
@@ -178,6 +180,16 @@ export class GroupQueue {
   }
 
   /**
+   * Returns how long (ms) the current message-handling container has been
+   * alive, or null if no container is active for this group.
+   */
+  getContainerAge(groupJid: string): number | null {
+    const state = this.groups.get(groupJid);
+    if (!state?.startedAt) return null;
+    return Date.now() - state.startedAt;
+  }
+
+  /**
    * Signal the active container to wind down by writing a close sentinel.
    */
   closeStdin(groupJid: string): void {
@@ -202,6 +214,7 @@ export class GroupQueue {
     state.idleWaiting = false;
     state.isTaskContainer = false;
     state.pendingMessages = false;
+    state.startedAt = Date.now();
     this.activeCount++;
 
     logger.debug(
@@ -223,6 +236,7 @@ export class GroupQueue {
       this.scheduleRetry(groupJid, state);
     } finally {
       state.active = false;
+      state.startedAt = null;
       state.process = null;
       state.containerName = null;
       state.groupFolder = null;
