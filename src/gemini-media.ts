@@ -10,10 +10,7 @@
  * they are rarely large enough to need the File API round-trip.
  */
 import { FileState, GoogleGenAI, type File as GeminiFile } from '@google/genai';
-import {
-  GEMINI_API_KEY,
-  GEMINI_FAST_MODEL,
-} from './config.js';
+import { GEMINI_API_KEY, GEMINI_FAST_MODEL } from './config.js';
 import { logger } from './logger.js';
 
 const WEB_FETCH_MAX_BYTES = 50 * 1024; // 50 KB
@@ -36,7 +33,10 @@ async function uploadAndWait(
   displayName: string,
 ): Promise<GeminiFile> {
   const blob = new Blob([buffer], { type: mimeType });
-  let file = await ai.files.upload({ file: blob, config: { mimeType, displayName } });
+  let file = await ai.files.upload({
+    file: blob,
+    config: { mimeType, displayName },
+  });
 
   // Poll until the file leaves PROCESSING state (usually <5 s for audio, a few seconds for video)
   while (file.state === FileState.PROCESSING) {
@@ -45,7 +45,9 @@ async function uploadAndWait(
   }
 
   if (file.state === FileState.FAILED) {
-    throw new Error(`Gemini file processing failed: ${file.error?.message ?? 'unknown error'}`);
+    throw new Error(
+      `Gemini file processing failed: ${file.error?.message ?? 'unknown error'}`,
+    );
   }
 
   return file;
@@ -115,10 +117,7 @@ export async function analyzeVideo(
 
     const response = await ai.models.generateContent({
       model: GEMINI_FAST_MODEL,
-      contents: [
-        { fileData: { fileUri: file.uri!, mimeType } },
-        prompt,
-      ],
+      contents: [{ fileData: { fileUri: file.uri!, mimeType } }, prompt],
     });
 
     return response.text ?? '';
