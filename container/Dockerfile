@@ -30,8 +30,8 @@ RUN apt-get update && apt-get install -y \
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Install agent-browser globally (optional browser automation tool)
-RUN npm install -g agent-browser
+# Install browser automation tools globally
+RUN npm install -g agent-browser chrome-devtools-mcp
 
 # Create app directory
 WORKDIR /app

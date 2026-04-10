@@ -15,6 +15,12 @@ export function hostGatewayArgs(): string[] {
   return [];
 }
 
+/** The IP address of the host machine as seen from inside the container. */
+export function hostIP(): string {
+  // Apple Container always routes the host at this fixed gateway address.
+  return '192.168.64.1';
+}
+
 /** Returns CLI args for a readonly bind mount. */
 export function readonlyMountArgs(
   hostPath: string,

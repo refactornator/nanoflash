@@ -17,6 +17,8 @@
 import fs from 'fs';
 import path from 'path';
 import { execFile, exec } from 'child_process';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import {
   GoogleGenAI,
   type Chat,
@@ -459,6 +461,57 @@ if (youtubeApiKey) {
   log('YouTube search not available (YOUTUBE_API_KEY not set)');
 }
 
+// ─── Chrome DevTools MCP ─────────────────────────────────────────────────
+
+let cdpMcpClient: Client | null = null;
+
+/** Convert a JSON Schema node to the subset Gemini's FunctionDeclaration accepts. */
+function jsonSchemaToGemini(schema: Record<string, unknown>): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') return { type: Type.STRING };
+  const typeMap: Record<string, string> = {
+    string: Type.STRING, number: Type.NUMBER, integer: Type.INTEGER,
+    boolean: Type.BOOLEAN, array: Type.ARRAY, object: Type.OBJECT,
+  };
+  const out: Record<string, unknown> = {};
+  if (typeof schema.type === 'string') out.type = typeMap[schema.type] ?? Type.STRING;
+  if (schema.description) out.description = schema.description;
+  if (schema.enum) out.enum = schema.enum;
+  if (schema.required) out.required = schema.required;
+  if (schema.properties && typeof schema.properties === 'object') {
+    const props: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(schema.properties as Record<string, unknown>))
+      props[k] = jsonSchemaToGemini(v as Record<string, unknown>);
+    out.properties = props;
+  }
+  if (schema.items) out.items = jsonSchemaToGemini(schema.items as Record<string, unknown>);
+  return out;
+}
+
+async function initCdpMcp(cdpUrl: string): Promise<void> {
+  try {
+    const transport = new StdioClientTransport({
+      command: 'chrome-devtools-mcp',
+      args: ['--browser-url', cdpUrl, '--no-usage-statistics'],
+    });
+    const client = new Client({ name: 'nanoflash-agent', version: '1.0.0' });
+    await client.connect(transport);
+    const { tools } = await client.listTools();
+    for (const tool of tools) {
+      TOOL_DECLARATIONS.push({
+        name: `cdp_${tool.name}`,
+        description: tool.description ?? '',
+        parameters: jsonSchemaToGemini(
+          (tool.inputSchema ?? {}) as Record<string, unknown>
+        ) as FunctionDeclaration['parameters'],
+      });
+    }
+    cdpMcpClient = client;
+    log(`Chrome DevTools MCP connected via ${cdpUrl} — ${tools.length} cdp_* tools registered`);
+  } catch (err) {
+    log(`Chrome DevTools MCP unavailable (${err instanceof Error ? err.message : String(err)}) — CDP tools not registered`);
+  }
+}
+
 // ─── Tool Executor ────────────────────────────────────────────────────────
 
 async function executeTool(
@@ -499,6 +552,13 @@ async function executeTool(
       case 'search_messages':
         return toolSearchMessages(String(args.chat_jid ?? containerInput.chatJid), args.query ? String(args.query) : undefined, args.limit ? Number(args.limit) : undefined);
       default:
+        // Route cdp_* tools to the chrome-devtools-mcp client
+        if (name.startsWith('cdp_') && cdpMcpClient) {
+          const toolName = name.slice(4); // strip 'cdp_' prefix
+          const result = await cdpMcpClient.callTool({ name: toolName, arguments: args });
+          const content = result.content as Array<{ type: string; text?: string }>;
+          return content.map((c) => c.text ?? '').join('\n') || 'Done.';
+        }
         return `Unknown tool: ${name}`;
     }
   } catch (err) {
@@ -697,9 +757,16 @@ async function consumeStream(
   let text = '';
   const functionCalls: FunctionCall[] = [];
   for await (const chunk of stream) {
-    if (chunk.text) {
-      text += chunk.text;
-      process.stdout.write(`${STREAM_CHUNK_MARKER}${JSON.stringify({ text: chunk.text })}\n`);
+    // Iterate raw parts instead of using chunk.text, which aggregates thinking
+    // tokens (thought: true) together with response text. Gemini 2.5 Flash
+    // emits thinking tokens as separate parts — we stream only the final response.
+    const parts = chunk.candidates?.[0]?.content?.parts ?? [];
+    for (const part of parts) {
+      if ((part as { thought?: boolean }).thought) continue;
+      if (part.text) {
+        text += part.text;
+        process.stdout.write(`${STREAM_CHUNK_MARKER}${JSON.stringify({ text: part.text })}\n`);
+      }
     }
     if (chunk.functionCalls?.length) {
       functionCalls.push(...chunk.functionCalls);
@@ -883,6 +950,15 @@ async function main(): Promise<void> {
   // per-request token cost for groups with large CLAUDE.md files.
   // Falls back silently if the instruction is too short or the API rejects it.
   const cacheTtlSeconds = parseInt(process.env.GEMINI_CACHE_TTL_SECONDS || '3600', 10);
+  // Connect to host Chrome via chrome-devtools-mcp when CHROME_CDP_URL is set.
+  // Must run before toolsForCache so discovered cdp_* tools are included.
+  const chromeCdpUrl = process.env.CHROME_CDP_URL || '';
+  if (chromeCdpUrl) {
+    await initCdpMcp(chromeCdpUrl);
+  } else {
+    log('Chrome DevTools MCP not configured (ENABLE_CHROME_CDP not set) — using headless agent-browser');
+  }
+
   // googleSearch (built-in grounding) cannot be combined with functionDeclarations
   // inside a cached context — the Gemini API rejects the combination with 400.
   // We cache with function calling only; grounding is added on the non-cached path.

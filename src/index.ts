@@ -283,9 +283,15 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   let editTimer: ReturnType<typeof setTimeout> | null = null;
 
   const flushStreamEdit = () => {
-    const snapshot = streamBuffer;
+    // Strip complete <internal> blocks, then hide anything after an unclosed
+    // opening tag — the closing tag may not have arrived yet mid-stream.
+    const visible = streamBuffer
+      .replace(/<internal>[\s\S]*?<\/internal>/g, '')
+      .replace(/<internal>[\s\S]*/g, '')
+      .trim();
+    if (!visible) return; // only internal content so far — nothing to show
     channel
-      .streamMessage?.(chatJid, snapshot, streamingMsgId)
+      .streamMessage?.(chatJid, visible, streamingMsgId)
       .then((id) => {
         if (id) streamingMsgId = id;
       })

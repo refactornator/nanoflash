@@ -11,6 +11,7 @@ import {
   CONTAINER_MAX_OUTPUT_SIZE,
   CONTAINER_TIMEOUT,
   DATA_DIR,
+  ENABLE_CHROME_CDP,
   GEMINI_API_KEY,
   GEMINI_CACHE_TTL_SECONDS,
   GEMINI_FAST_MODEL,
@@ -27,6 +28,7 @@ import { logger } from './logger.js';
 import {
   CONTAINER_RUNTIME_BIN,
   hostGatewayArgs,
+  hostIP,
   readonlyMountArgs,
   stopContainer,
 } from './container-runtime.js';
@@ -206,6 +208,8 @@ async function buildContainerArgs(
 
   // Optional integrations — only injected when the key is present
   if (YOUTUBE_API_KEY) args.push('-e', `YOUTUBE_API_KEY=${YOUTUBE_API_KEY}`);
+  if (ENABLE_CHROME_CDP)
+    args.push('-e', `CHROME_CDP_URL=http://${hostIP()}:9222`);
 
   // Run as host user so bind-mounted files are accessible.
   // Skip when running as root (uid 0), as the container's node user (uid 1000),
