@@ -15,7 +15,7 @@ const envConfig = readEnvFile([
   'GEMINI_THINKING_BUDGET',
   'GEMINI_CACHE_TTL_SECONDS',
   'YOUTUBE_API_KEY',
-  'ENABLE_CHROME_CDP',
+  'ENABLE_CHROME_MCP',
 ]);
 
 export const ASSISTANT_NAME =
@@ -74,10 +74,10 @@ export const YOUTUBE_API_KEY =
 
 // When true, the agent connects to a real Chrome instance on the host via CDP
 // (chrome-devtools-mcp) instead of launching headless Chromium. Start Chrome
-// with --remote-debugging-port=9222, set ENABLE_CHROME_CDP=true in .env, and
+// with --remote-debugging-port=9222, set ENABLE_CHROME_MCP=true in .env, and
 // the host IP + port are resolved automatically.
-export const ENABLE_CHROME_CDP =
-  (process.env.ENABLE_CHROME_CDP || envConfig.ENABLE_CHROME_CDP) === 'true';
+export const ENABLE_CHROME_MCP =
+  (process.env.ENABLE_CHROME_MCP || envConfig.ENABLE_CHROME_MCP) === 'true';
 
 export const GEMINI_CACHE_TTL_SECONDS = parseInt(
   process.env.GEMINI_CACHE_TTL_SECONDS ||

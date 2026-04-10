@@ -11,7 +11,7 @@ import {
   CONTAINER_MAX_OUTPUT_SIZE,
   CONTAINER_TIMEOUT,
   DATA_DIR,
-  ENABLE_CHROME_CDP,
+  ENABLE_CHROME_MCP,
   GEMINI_API_KEY,
   GEMINI_CACHE_TTL_SECONDS,
   GEMINI_FAST_MODEL,
@@ -208,7 +208,7 @@ async function buildContainerArgs(
 
   // Optional integrations — only injected when the key is present
   if (YOUTUBE_API_KEY) args.push('-e', `YOUTUBE_API_KEY=${YOUTUBE_API_KEY}`);
-  if (ENABLE_CHROME_CDP)
+  if (ENABLE_CHROME_MCP)
     args.push('-e', `CHROME_CDP_URL=http://${hostIP()}:9222`);
 
   // Run as host user so bind-mounted files are accessible.

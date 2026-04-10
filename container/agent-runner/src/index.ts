@@ -956,7 +956,7 @@ async function main(): Promise<void> {
   if (chromeCdpUrl) {
     await initCdpMcp(chromeCdpUrl);
   } else {
-    log('Chrome DevTools MCP not configured (ENABLE_CHROME_CDP not set) — using headless agent-browser');
+    log('Chrome DevTools MCP not configured (ENABLE_CHROME_MCP not set) — using headless agent-browser');
   }
 
   // googleSearch (built-in grounding) cannot be combined with functionDeclarations
