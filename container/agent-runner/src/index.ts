@@ -492,6 +492,7 @@ async function initCdpMcp(cdpUrl: string): Promise<void> {
     const transport = new StdioClientTransport({
       command: 'chrome-devtools-mcp',
       args: ['--browser-url', cdpUrl, '--no-usage-statistics'],
+      stderr: 'ignore', // suppress verbose PerformanceIssue handler spam
     });
     const client = new Client({ name: 'nanoflash-agent', version: '1.0.0' });
     await client.connect(transport);
