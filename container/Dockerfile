@@ -23,12 +23,18 @@ RUN apt-get update && apt-get install -y \
     libdrm2 \
     libxshmfence1 \
     curl \
+    ffmpeg \
+    python3 \
     git \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Chromium path for agent-browser
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+
+# Install yt-dlp for video downloading (X/Twitter, Instagram, etc.)
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+    -o /usr/local/bin/yt-dlp && chmod a+rx /usr/local/bin/yt-dlp
 
 # Install browser automation tools globally
 RUN npm install -g agent-browser chrome-devtools-mcp

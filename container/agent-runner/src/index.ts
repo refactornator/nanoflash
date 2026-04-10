@@ -17,6 +17,9 @@
 import fs from 'fs';
 import path from 'path';
 import { execFile, exec } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import {
@@ -461,6 +464,25 @@ if (youtubeApiKey) {
   log('YouTube search not available (YOUTUBE_API_KEY not set)');
 }
 
+TOOL_DECLARATIONS.push({
+  name: 'download_and_analyze_video',
+  description:
+    'Download a video from X/Twitter, Instagram, or any URL and send it to Gemini for visual analysis. ' +
+    'For X tweets: first use cdp_evaluate_script to get the video src with `document.querySelector("video")?.src`, then pass that URL here. ' +
+    'For YouTube videos: just include the YouTube URL in your message instead — Gemini reads those natively. ' +
+    'Returns the video to Gemini as a fileData part so you can analyze its content, context, and meaning.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      url: {
+        type: Type.STRING,
+        description: 'Direct video URL or page URL (tweet, Instagram post, etc.). For X videos, prefer the direct video src from the <video> element.',
+      },
+    },
+    required: ['url'],
+  },
+});
+
 // ─── Chrome DevTools MCP ─────────────────────────────────────────────────
 
 let cdpMcpClient: Client | null = null;
@@ -513,6 +535,54 @@ async function initCdpMcp(cdpUrl: string): Promise<void> {
   }
 }
 
+// ─── Video Download & Analysis ────────────────────────────────────────────
+
+async function toolDownloadAndAnalyzeVideo(url: string): Promise<ToolResult> {
+  const tmpFile = `/tmp/nanoflash-video-${Date.now()}.mp4`;
+  try {
+    if (!process.env.GEMINI_API_KEY) return { text: 'Error: GEMINI_API_KEY not set' };
+
+    // Download with yt-dlp — prefer mp4 ≤ 100MB; merge streams via ffmpeg
+    await execFileAsync('yt-dlp', [
+      '--quiet', '--no-warnings',
+      '--format', 'bestvideo[ext=mp4][filesize<100M]+bestaudio[ext=m4a]/best[ext=mp4][filesize<100M]/best[filesize<100M]',
+      '--merge-output-format', 'mp4',
+      '--output', tmpFile,
+      url,
+    ]);
+
+    if (!fs.existsSync(tmpFile)) return { text: 'yt-dlp finished but output file not found' };
+    const sizeMB = (fs.statSync(tmpFile).size / 1024 / 1024).toFixed(1);
+
+    // Upload to Gemini File API
+    const fileAi = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    let file = await fileAi.files.upload({ file: tmpFile, config: { mimeType: 'video/mp4' } });
+    log(`Video uploaded to Gemini File API: ${file.name} (${sizeMB}MB), state: ${file.state}`);
+
+    // Wait for Gemini to finish processing
+    let waited = 0;
+    while (file.state === 'PROCESSING' && waited < 120_000) {
+      await new Promise((r) => setTimeout(r, 3000));
+      waited += 3000;
+      file = await fileAi.files.get({ name: file.name! });
+    }
+
+    fs.unlinkSync(tmpFile);
+
+    if (file.state === 'FAILED') return { text: `Gemini video processing failed for ${file.name}` };
+    if (!file.uri) return { text: 'File uploaded but URI missing' };
+
+    log(`Video ready for analysis: ${file.uri}`);
+    return {
+      text: `Video downloaded (${sizeMB}MB) and ready. Analyzing now...`,
+      extraParts: [{ fileData: { mimeType: 'video/mp4', fileUri: file.uri } }],
+    };
+  } catch (err) {
+    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+    return { text: `Video download failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
 // ─── Tool Executor ────────────────────────────────────────────────────────
 
 type ToolResult = { text: string; extraParts?: Part[] };
@@ -551,6 +621,8 @@ async function executeTool(
         return t(await toolWebFetch(String(args.url ?? '')));
       case 'youtube_search':
         return t(await toolYoutubeSearch(String(args.query ?? ''), args.max_results ? Number(args.max_results) : 5));
+      case 'download_and_analyze_video':
+        return await toolDownloadAndAnalyzeVideo(String(args.url ?? ''));
       case 'schedule_task':
         return t(toolScheduleTask(String(args.prompt ?? ''), String(args.schedule_type ?? ''), String(args.schedule_value ?? ''), containerInput.chatJid, containerInput.groupFolder));
       case 'search_messages':
