@@ -515,55 +515,65 @@ async function initCdpMcp(cdpUrl: string): Promise<void> {
 
 // ─── Tool Executor ────────────────────────────────────────────────────────
 
+type ToolResult = { text: string; extraParts?: Part[] };
+
 async function executeTool(
   name: string,
   args: Record<string, unknown>,
   containerInput: ContainerInput,
-): Promise<string> {
+): Promise<ToolResult> {
+  const t = (text: string): ToolResult => ({ text });
   try {
     switch (name) {
       case 'bash':
-        return await toolBash(String(args.command ?? ''));
+        return t(await toolBash(String(args.command ?? '')));
       case 'read_file':
-        return toolReadFile(String(args.path ?? ''), containerInput.isMain);
+        return t(toolReadFile(String(args.path ?? ''), containerInput.isMain));
       case 'write_file':
-        return toolWriteFile(String(args.path ?? ''), String(args.content ?? ''), containerInput.isMain);
+        return t(toolWriteFile(String(args.path ?? ''), String(args.content ?? ''), containerInput.isMain));
       case 'list_directory':
-        return toolListDirectory(args.path ? String(args.path) : undefined, containerInput.isMain);
+        return t(toolListDirectory(args.path ? String(args.path) : undefined, containerInput.isMain));
       case 'send_message':
-        return toolSendMessage(String(args.chat_jid ?? containerInput.chatJid), String(args.text ?? ''), containerInput.groupFolder, args.reply_to ? String(args.reply_to) : undefined);
+        return t(toolSendMessage(String(args.chat_jid ?? containerInput.chatJid), String(args.text ?? ''), containerInput.groupFolder, args.reply_to ? String(args.reply_to) : undefined));
       case 'react':
-        return toolReact(String(args.chat_jid ?? containerInput.chatJid), String(args.message_id ?? ''), String(args.emoji ?? ''), containerInput.groupFolder);
+        return t(toolReact(String(args.chat_jid ?? containerInput.chatJid), String(args.message_id ?? ''), String(args.emoji ?? ''), containerInput.groupFolder));
       case 'browser_open':
-        return await toolBrowserOpen(String(args.url ?? ''));
+        return t(await toolBrowserOpen(String(args.url ?? '')));
       case 'browser_snapshot':
-        return await toolBrowserSnapshot();
+        return t(await toolBrowserSnapshot());
       case 'browser_click':
-        return await toolBrowserClick(args.ref ? String(args.ref) : undefined, args.selector ? String(args.selector) : undefined);
+        return t(await toolBrowserClick(args.ref ? String(args.ref) : undefined, args.selector ? String(args.selector) : undefined));
       case 'browser_type':
-        return await toolBrowserType(String(args.selector ?? ''), String(args.text ?? ''));
+        return t(await toolBrowserType(String(args.selector ?? ''), String(args.text ?? '')));
       case 'browser_close':
-        return await toolBrowserClose();
+        return t(await toolBrowserClose());
       case 'web_fetch':
-        return await toolWebFetch(String(args.url ?? ''));
+        return t(await toolWebFetch(String(args.url ?? '')));
       case 'youtube_search':
-        return await toolYoutubeSearch(String(args.query ?? ''), args.max_results ? Number(args.max_results) : 5);
+        return t(await toolYoutubeSearch(String(args.query ?? ''), args.max_results ? Number(args.max_results) : 5));
       case 'schedule_task':
-        return toolScheduleTask(String(args.prompt ?? ''), String(args.schedule_type ?? ''), String(args.schedule_value ?? ''), containerInput.chatJid, containerInput.groupFolder);
+        return t(toolScheduleTask(String(args.prompt ?? ''), String(args.schedule_type ?? ''), String(args.schedule_value ?? ''), containerInput.chatJid, containerInput.groupFolder));
       case 'search_messages':
-        return toolSearchMessages(String(args.chat_jid ?? containerInput.chatJid), args.query ? String(args.query) : undefined, args.limit ? Number(args.limit) : undefined);
+        return t(toolSearchMessages(String(args.chat_jid ?? containerInput.chatJid), args.query ? String(args.query) : undefined, args.limit ? Number(args.limit) : undefined));
       default:
         // Route cdp_* tools to the chrome-devtools-mcp client
         if (name.startsWith('cdp_') && cdpMcpClient) {
-          const toolName = name.slice(4); // strip 'cdp_' prefix
+          const toolName = name.slice(4);
           const result = await cdpMcpClient.callTool({ name: toolName, arguments: args });
-          const content = result.content as Array<{ type: string; text?: string }>;
-          return content.map((c) => c.text ?? '').join('\n') || 'Done.';
+          const content = result.content as Array<{
+            type: string; text?: string; data?: string; mimeType?: string;
+          }>;
+          // Separate text and image parts — Gemini receives both
+          const text = content.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('\n') || 'Done.';
+          const extraParts: Part[] = content
+            .filter((c) => c.type === 'image' && c.data)
+            .map((c) => ({ inlineData: { mimeType: c.mimeType ?? 'image/png', data: c.data! } }));
+          return { text, ...(extraParts.length ? { extraParts } : {}) };
         }
-        return `Unknown tool: ${name}`;
+        return t(`Unknown tool: ${name}`);
     }
   } catch (err) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`;
+    return t(`Error: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -800,14 +810,18 @@ async function runGeminiQuery(
     toolRounds++;
     log(`Tool round ${toolRounds}: ${functionCalls.map((c) => c.name ?? '?').join(', ')}`);
 
-    const functionResponses: Part[] = await Promise.all(
-      functionCalls.map(async (call) => {
-        const toolName = call.name ?? '';
-        const output = await executeTool(toolName, call.args ?? {}, containerInput);
-        log(`  ${toolName} → ${output.slice(0, 120)}`);
-        return { functionResponse: { name: toolName, response: { result: output } } } satisfies Part;
-      }),
-    );
+    const functionResponses: Part[] = (
+      await Promise.all(
+        functionCalls.map(async (call) => {
+          const toolName = call.name ?? '';
+          const result = await executeTool(toolName, call.args ?? {}, containerInput);
+          log(`  ${toolName} → ${result.text.slice(0, 120)}`);
+          const fnPart: Part = { functionResponse: { name: toolName, response: { result: result.text } } };
+          // Append any image parts (e.g. cdp_take_screenshot) so Gemini sees the visual
+          return result.extraParts ? [fnPart, ...result.extraParts] : [fnPart];
+        }),
+      )
+    ).flat();
 
     const toolStream = await chat.sendMessageStream({ message: functionResponses });
     const turn = await consumeStream(toolStream);
