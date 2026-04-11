@@ -75,10 +75,6 @@ async function readStdin(): Promise<string> {
 
 const OUTPUT_START_MARKER = '---NANOFLASH_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOFLASH_OUTPUT_END---';
-// Each line prefixed with this marker carries a streaming text chunk from the
-// agent to the host. The host can relay these in real-time to the channel.
-const STREAM_CHUNK_MARKER = '---NANOFLASH_STREAM_CHUNK---';
-
 function writeOutput(output: ContainerOutput): void {
   console.log(OUTPUT_START_MARKER);
   console.log(JSON.stringify(output));
@@ -830,8 +826,7 @@ async function getOrCreateCache(
 // ─── Gemini Query ─────────────────────────────────────────────────────────
 
 /**
- * Consume one streaming response turn. Writes STREAM_CHUNK markers to stdout
- * for each text chunk so the host can relay them to the channel in real-time.
+ * Consume one streaming response turn.
  * Returns the accumulated full text and any function calls from this turn.
  */
 async function consumeStream(
@@ -848,7 +843,6 @@ async function consumeStream(
       if ((part as { thought?: boolean }).thought) continue;
       if (part.text) {
         text += part.text;
-        process.stdout.write(`${STREAM_CHUNK_MARKER}${JSON.stringify({ text: part.text })}\n`);
       }
     }
     if (chunk.functionCalls?.length) {

@@ -273,42 +273,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   let outputSentToUser = false;
   let firstOutputLogged = false;
 
-  // ── Streaming live-edit state ──────────────────────────────────────────
-  // Chunks arrive from the agent in real-time via onStreamChunk. We debounce
-  // edits to avoid hammering the channel API: at most one edit per 500 ms.
-  // The final onOutput callback always does one last edit/send with the
-  // complete, canonicalized text (internal tags stripped, etc.).
-  let streamBuffer = '';
-  let streamingMsgId: string | undefined;
-  let editTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const flushStreamEdit = () => {
-    // Strip complete <internal> blocks, then hide anything after an unclosed
-    // opening tag — the closing tag may not have arrived yet mid-stream.
-    const visible = streamBuffer
-      .replace(/<internal>[\s\S]*?<\/internal>/g, '')
-      .replace(/<internal>[\s\S]*/g, '')
-      .trim();
-    if (!visible) return; // only internal content so far — nothing to show
-    channel
-      .streamMessage?.(chatJid, visible, streamingMsgId)
-      .then((id) => {
-        if (id) streamingMsgId = id;
-      })
-      .catch((err) => logger.warn({ chatJid, err }, 'Stream edit failed'));
-  };
-
-  // Only activate streaming if the channel supports live editing.
-  const onStreamChunk: ((text: string) => void) | undefined =
-    channel.streamMessage
-      ? (chunk: string) => {
-          streamBuffer += chunk;
-          if (editTimer) clearTimeout(editTimer);
-          editTimer = setTimeout(flushStreamEdit, 500);
-        }
-      : undefined;
-  // ──────────────────────────────────────────────────────────────────────
-
   const output = await runAgent(
     group,
     prompt,
@@ -321,7 +285,12 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
             ? result.result
             : JSON.stringify(result.result);
         // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
-        const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+        // Strip <ctrl{N}> tags — chrome-devtools-mcp snapshot serializer encodes
+        // special chars as <ctrl42> etc; Gemini sometimes echoes these verbatim.
+        const text = raw
+          .replace(/<internal>[\s\S]*?<\/internal>/g, '')
+          .replace(/<ctrl\d+>/g, '')
+          .trim();
 
         const now = Date.now();
         const e2eMs = now - msgTime;
@@ -350,19 +319,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         }
 
         if (text) {
-          if (streamingMsgId) {
-            // Streaming was active: cancel the debounce and do one authoritative
-            // final edit with the fully processed text (internal tags stripped).
-            if (editTimer) {
-              clearTimeout(editTimer);
-              editTimer = null;
-            }
-            await channel.streamMessage?.(chatJid, text, streamingMsgId);
-          } else {
-            // No streaming (channel doesn't support it, or no chunks arrived yet):
-            // fall back to normal sendMessage.
-            await channel.sendMessage(chatJid, text);
-          }
+          await channel.sendMessage(chatJid, text);
           outputSentToUser = true;
         }
         // Only reset idle timer on actual results, not session-update markers (result: null)
@@ -377,7 +334,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         hadError = true;
       }
     },
-    onStreamChunk,
   );
 
   await channel.setTyping?.(chatJid, false);
@@ -411,7 +367,6 @@ async function runAgent(
   prompt: string,
   chatJid: string,
   onOutput?: (output: ContainerOutput) => Promise<void>,
-  onStreamChunk?: (text: string) => void,
 ): Promise<'success' | 'error'> {
   const isMain = group.isMain === true;
   const sessionId = sessions[group.folder];
@@ -467,7 +422,6 @@ async function runAgent(
       (proc, containerName) =>
         queue.registerProcess(chatJid, proc, containerName, group.folder),
       wrappedOnOutput,
-      onStreamChunk,
     );
 
     if (output.newSessionId) {

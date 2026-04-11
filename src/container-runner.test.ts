@@ -5,7 +5,6 @@ import { PassThrough } from 'stream';
 // Sentinel markers must match container-runner.ts
 const OUTPUT_START_MARKER = '---NANOFLASH_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOFLASH_OUTPUT_END---';
-const STREAM_CHUNK_MARKER = '---NANOFLASH_STREAM_CHUNK---';
 
 // Mock config
 vi.mock('./config.js', () => ({
@@ -22,6 +21,8 @@ vi.mock('./config.js', () => ({
   MAX_TOOL_ROUNDS: 25,
   GEMINI_THINKING_BUDGET: -1,
   GEMINI_CACHE_TTL_SECONDS: 3600,
+  YOUTUBE_API_KEY: undefined,
+  ENABLE_CHROME_MCP: false,
 }));
 
 // Mock logger
@@ -222,62 +223,4 @@ describe('container-runner timeout behavior', () => {
     expect(result.newSessionId).toBe('session-456');
   });
 
-  it('parses STREAM_CHUNK lines and calls onStreamChunk', async () => {
-    const chunks: string[] = [];
-    const onStreamChunk = vi.fn((text: string) => {
-      chunks.push(text);
-    });
-    const onOutput = vi.fn(async () => {});
-
-    const resultPromise = runContainerAgent(
-      testGroup,
-      testInput,
-      () => {},
-      onOutput,
-      onStreamChunk,
-    );
-
-    // Emit two stream chunks followed by the final output marker
-    fakeProc.stdout.push(
-      `${STREAM_CHUNK_MARKER}${JSON.stringify({ text: 'Hello ' })}\n`,
-    );
-    fakeProc.stdout.push(
-      `${STREAM_CHUNK_MARKER}${JSON.stringify({ text: 'world' })}\n`,
-    );
-    emitOutputMarker(fakeProc, { status: 'success', result: 'Hello world' });
-
-    await vi.advanceTimersByTimeAsync(10);
-    fakeProc.emit('close', 0);
-    await vi.advanceTimersByTimeAsync(10);
-
-    await resultPromise;
-
-    expect(onStreamChunk).toHaveBeenCalledTimes(2);
-    expect(chunks).toEqual(['Hello ', 'world']);
-  });
-
-  it('ignores STREAM_CHUNK lines when onStreamChunk is not provided', async () => {
-    const onOutput = vi.fn(async () => {});
-    const resultPromise = runContainerAgent(
-      testGroup,
-      testInput,
-      () => {},
-      onOutput,
-      // no onStreamChunk
-    );
-
-    // Emit stream chunks — should not throw even without handler
-    fakeProc.stdout.push(
-      `${STREAM_CHUNK_MARKER}${JSON.stringify({ text: 'ignored' })}\n`,
-    );
-    emitOutputMarker(fakeProc, { status: 'success', result: 'Done' });
-
-    await vi.advanceTimersByTimeAsync(10);
-    fakeProc.emit('close', 0);
-    await vi.advanceTimersByTimeAsync(10);
-
-    const result = await resultPromise;
-    expect(result.status).toBe('success');
-    expect(onOutput).toHaveBeenCalledOnce();
-  });
 });
